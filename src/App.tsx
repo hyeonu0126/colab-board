@@ -20,8 +20,6 @@ function App() {
   const [currentStrokeId, setCurrentStrokeId] = useState<string | null>(null);
 
   const [selectedColor, setSelectedColor] = useState<string>('black');
-  
-  // 🌟 펜 굵기 기본값을 5로 상향 조정하고 정수/소수 처리가 유연하도록 설정
   const [lineWidth, setLineWidth] = useState<number>(5);
 
   const [firebaseData, setFirebaseData] = useState<any>(null);
@@ -83,7 +81,7 @@ function App() {
 
   const getDistanceToLine = (px: number, py: number, sx: number, sy: number, ex: number, ey: number) => {
     const l2 = (ex - sx) ** 2 + (ey - sy) ** 2;
-    if (l2 === 0) return Math.sqrt((px - sx) ** 2 + (py - sy) ** 2);
+    if (l2 === 0) return Math.sqrt((px - sx) ** 2 + (py - py) ** 2);
     let t = ((px - sx) * (ex - sx) + (py - sy) * (ey - sy)) / l2;
     t = Math.max(0, Math.min(1, t));
     return Math.sqrt((px - (sx + t * (ex - sx))) ** 2 + (py - (sy + t * (ey - sy))) ** 2);
@@ -132,6 +130,7 @@ function App() {
     }
   };
 
+  // 🌟 [수정 완료] 마우스를 누르는 순간 점(아주 짧은 선)을 즉시 생성하여 표현
   const handleMouseDown = (e: React.MouseEvent) => {
     const clickPos = getMousePos(e);
     
@@ -142,8 +141,37 @@ function App() {
     } else if (currentMode === 'draw') {
       setIsDrawing(true);
       setLastPos(clickPos);
+      
       const newId = Math.random().toString(36).substr(2, 9);
       setCurrentStrokeId(newId);
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // 1. 로컬 렌더링: 누른 자리에 지름이 lineWidth인 점을 즉시 그립니다.
+      ctx.beginPath();
+      ctx.moveTo(clickPos.x, clickPos.y);
+      ctx.lineTo(clickPos.x + 0.1, clickPos.y + 0.1); // 아주 미세하게 선을 늘려 lineCap='round'에 의해 완벽한 원 형태의 점이 되도록 유도
+      ctx.strokeStyle = selectedColor;
+      ctx.lineWidth = lineWidth; 
+      ctx.stroke();
+
+      // 2. 파이어베이스 전송: 드래그하지 않고 떼더라도 점이 남도록 즉시 백그라운드로 보냅니다.
+      const newLineRef = push(linesRef);
+      set(newLineRef, {
+        startX: clickPos.x,
+        startY: clickPos.y,
+        endX: clickPos.x + 0.1,
+        endY: clickPos.y + 0.1,
+        strokeId: newId,
+        color: selectedColor,
+        lineWidth: lineWidth 
+      });
+
+      // 마우스가 이동할 때 자연스럽게 이어지도록 좌표 보정 업데이트
+      setLastPos({ x: clickPos.x + 0.1, y: clickPos.y + 0.1 });
     }
   };
 
@@ -326,7 +354,6 @@ function App() {
 
           <div style={{ width: '1px', height: '20px', backgroundColor: '#ccc' }} />
 
-          {/* 🌟 [수정 완료] 최소 1mm ~ 최대 20mm 슬라이더 제어 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#555' }}>굵기 조절:</span>
             <input 
