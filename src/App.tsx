@@ -2,14 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { db } from './firebase'
 import { ref, onValue, push, set, remove } from "firebase/database";
 
-// 마우스 툴 상태 정의
 type ToolMode = 'draw' | 'erase_partial' | 'erase_stroke';
 
-// 히스토리에 기록할 작업의 타입
 type HistoryAction = {
   type: 'draw' | 'erase';
-  strokeId?: string; // 그리기 되돌리기용
-  restoredLines?: any[]; // 지우기(부분/획/전체 화면 포함) 되돌리기용 백업 데이터
+  strokeId?: string;
+  restoredLines?: any[];
 };
 
 function App() {
@@ -24,12 +22,10 @@ function App() {
   const [firebaseData, setFirebaseData] = useState<any>(null);
   const linesRef = ref(db, 'lines'); 
 
-  // 사용자가 수행한 작업들을 저장하는 로컬 스택 (Undo용)
   const [historyStack, setHistoryStack] = useState<HistoryAction[]>([]);
-  // 지우개 질 한 번 동안 지워진 선들을 임시로 모으는 배열
   const [tempErasedLines, setTempErasedLines] = useState<any[]>([]);
 
-  // 화면 그리기 함수
+  // 화면 전체를 싹 다시 그리는 함수 (파이어베이스 데이터 기반)
   const renderCanvas = (canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, data: any) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!data) return;
@@ -79,7 +75,6 @@ function App() {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  // 점과 직선 사이의 거리 계산 함수
   const getDistanceToLine = (px: number, py: number, sx: number, sy: number, ex: number, ey: number) => {
     const l2 = (ex - sx) ** 2 + (ey - sy) ** 2;
     if (l2 === 0) return Math.sqrt((px - sx) ** 2 + (py - sy) ** 2);
@@ -88,7 +83,6 @@ function App() {
     return Math.sqrt((px - (sx + t * (ex - sx))) ** 2 + (py - (sy + t * (ey - sy))) ** 2);
   };
 
-  // 지우개 모드 처리 함수
   const handleEraserAction = (currentPos: { x: number, y: number }) => {
     if (!firebaseData) return;
 
@@ -147,12 +141,25 @@ function App() {
     }
   };
 
+  // [핵심 최적화 반영 파트] 마우스 무브 실시간 렌더링 분리
   const handleMouseMove = (e: React.MouseEvent) => {
     const currentPos = getMousePos(e);
 
     if ((currentMode === 'erase_partial' || currentMode === 'erase_stroke') && isErasing) {
       handleEraserAction(currentPos);
     } else if (currentMode === 'draw' && isDrawing && currentStrokeId) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // 🌟 1. 파이어베이스 응답을 기다리지 않고, 내 화면에 0ms 즉시 선을 긋습니다 (로컬 선 렌더링)
+      ctx.beginPath();
+      ctx.moveTo(lastPos.x, lastPos.y);
+      ctx.lineTo(currentPos.x, currentPos.y);
+      ctx.stroke();
+
+      // 🌟 2. 내 화면엔 이미 그렸으니, 파이어베이스에는 백그라운드로 비동기 전송만 던져둡니다.
       const newLineRef = push(linesRef);
       set(newLineRef, {
         startX: lastPos.x,
@@ -161,6 +168,7 @@ function App() {
         endY: currentPos.y,
         strokeId: currentStrokeId 
       });
+
       setLastPos(currentPos);
     }
   };
@@ -179,7 +187,6 @@ function App() {
     setCurrentStrokeId(null); 
   };
 
-  // 그리기든, 부분 지우개든, 전체 화면 지우기든 상관없이 되돌리는 통합 Undo 메커니즘
   const handleUndo = async () => {
     if (historyStack.length === 0) return; 
 
@@ -194,7 +201,6 @@ function App() {
         }
       });
     } else if (lastAction.type === 'erase' && lastAction.restoredLines) {
-      // 부분/획/전체 화면 지우기로 인해 지워졌던 선들을 순치적으로 재복원 push
       lastAction.restoredLines.forEach((lineData) => {
         const newLineRef = push(linesRef);
         set(newLineRef, {
@@ -208,19 +214,12 @@ function App() {
     }
   };
 
-  // [수정 사항] 전체 화면을 밀기 전에 현재 캔버스의 모든 선 데이터를 복원 스택에 백업합니다.
   const clearCanvas = () => {
     if (!firebaseData) return;
-
-    // 1. 현재 데이터베이스에 띄워져 있는 모든 선 조각을 배열로 추출
     const allLines = Object.values(firebaseData);
-
     if (allLines.length > 0) {
-      // 2. 전체 화면 지우기도 하나의 '거대한 지우기 액션'으로 히스토리에 박아둠
       setHistoryStack((prev) => [...prev, { type: 'erase', restoredLines: allLines }]);
     }
-
-    // 3. 백업 완료 후 파이어베이스 폭파
     remove(linesRef);
   };
 
@@ -233,7 +232,6 @@ function App() {
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}>
       <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 10, display: 'flex', gap: '10px' }}>
-        
         <button 
           onClick={() => setCurrentMode('draw')}
           style={{
