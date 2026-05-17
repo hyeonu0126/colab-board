@@ -19,13 +19,16 @@ function App() {
   const [isErasing, setIsErasing] = useState(false); 
   const [currentStrokeId, setCurrentStrokeId] = useState<string | null>(null);
 
+  // [신규 변경] 현재 선택된 펜 색상 상태 관리 (기본값: 검은색)
+  const [selectedColor, setSelectedColor] = useState<string>('black');
+
   const [firebaseData, setFirebaseData] = useState<any>(null);
   const linesRef = ref(db, 'lines'); 
 
   const [historyStack, setHistoryStack] = useState<HistoryAction[]>([]);
   const [tempErasedLines, setTempErasedLines] = useState<any[]>([]);
 
-  // 화면 전체를 싹 다시 그리는 함수 (파이어베이스 데이터 기반)
+  // 화면 그리기 함수 (파이어베이스의 color 정보를 읽어서 선마다 다르게 스타일링합니다)
   const renderCanvas = (canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, data: any) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!data) return;
@@ -34,6 +37,9 @@ function App() {
       ctx.beginPath();
       ctx.moveTo(line.startX, line.startY);
       ctx.lineTo(line.endX, line.endY);
+      
+      // 🌟 파이어베이스에 저장된 색상이 있으면 그 색으로, 없으면 기본 검은색으로 그립니다.
+      ctx.strokeStyle = line.color || 'black';
       ctx.stroke();
     });
   };
@@ -49,7 +55,6 @@ function App() {
       canvas.height = window.innerHeight;
       ctx.lineCap = 'round';
       ctx.lineWidth = 5;
-      ctx.strokeStyle = 'black';
       
       if (firebaseData) renderCanvas(canvas, ctx, firebaseData);
     };
@@ -141,7 +146,6 @@ function App() {
     }
   };
 
-  // [핵심 최적화 반영 파트] 마우스 무브 실시간 렌더링 분리
   const handleMouseMove = (e: React.MouseEvent) => {
     const currentPos = getMousePos(e);
 
@@ -153,20 +157,22 @@ function App() {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // 🌟 1. 파이어베이스 응답을 기다리지 않고, 내 화면에 0ms 즉시 선을 긋습니다 (로컬 선 렌더링)
+      // 🌟 [최적화 유지] 내가 고른 색상(`selectedColor`)으로 내 화면에 0ms 즉시 드로잉 처리
       ctx.beginPath();
       ctx.moveTo(lastPos.x, lastPos.y);
       ctx.lineTo(currentPos.x, currentPos.y);
+      ctx.strokeStyle = selectedColor;
       ctx.stroke();
 
-      // 🌟 2. 내 화면엔 이미 그렸으니, 파이어베이스에는 백그라운드로 비동기 전송만 던져둡니다.
+      // 🌟 파이어베이스 데이터베이스에도 현재 선의 색상값(`color`)을 같이 묶어서 쏩니다.
       const newLineRef = push(linesRef);
       set(newLineRef, {
         startX: lastPos.x,
         startY: lastPos.y,
         endX: currentPos.x,
         endY: currentPos.y,
-        strokeId: currentStrokeId 
+        strokeId: currentStrokeId,
+        color: selectedColor // 색상 데이터 추가
       });
 
       setLastPos(currentPos);
@@ -201,6 +207,7 @@ function App() {
         }
       });
     } else if (lastAction.type === 'erase' && lastAction.restoredLines) {
+      // 복원 시에도 기존에 저장되어 있던 고유의 색상(`color`) 속성을 누락 없이 그대로 원상복구합니다.
       lastAction.restoredLines.forEach((lineData) => {
         const newLineRef = push(linesRef);
         set(newLineRef, {
@@ -208,7 +215,8 @@ function App() {
           startY: lineData.startY,
           endX: lineData.endX,
           endY: lineData.endY,
-          strokeId: lineData.strokeId
+          strokeId: lineData.strokeId,
+          color: lineData.color || 'black'
         });
       });
     }
@@ -229,64 +237,98 @@ function App() {
     return 'default';
   };
 
+  // 제공할 컬러 프리셋 배열
+  const colors = ['black', '#ff3b30', '#007aff', '#4cd964', '#ffcc00', '#5856d6'];
+
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}>
-      <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 10, display: 'flex', gap: '10px' }}>
-        <button 
-          onClick={() => setCurrentMode('draw')}
-          style={{
-            padding: '10px 20px', 
-            backgroundColor: currentMode === 'draw' ? '#007aff' : '#ffffff', 
-            color: currentMode === 'draw' ? '#ffffff' : '#333333',
-            border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'
-          }}
-        >
-          🎨 그리기 모드
-        </button>
+      {/* 🛠️ 한층 업그레이드된 통합 컨트롤러 툴바 */}
+      <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        
+        {/* 상단 레이어: 액션 툴 버튼 세트 */}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            onClick={() => setCurrentMode('draw')}
+            style={{
+              padding: '10px 20px', 
+              backgroundColor: currentMode === 'draw' ? '#007aff' : '#ffffff', 
+              color: currentMode === 'draw' ? '#ffffff' : '#333333',
+              border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'
+            }}
+          >
+            🎨 그리기 모드
+          </button>
 
-        <button 
-          onClick={() => setCurrentMode('erase_partial')}
-          style={{
-            padding: '10px 20px', 
-            backgroundColor: currentMode === 'erase_partial' ? '#ff9500' : '#ffffff', 
-            color: currentMode === 'erase_partial' ? '#ffffff' : '#333333',
-            border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'
-          }}
-        >
-          🧹 부분 지우개
-        </button>
+          <button 
+            onClick={() => setCurrentMode('erase_partial')}
+            style={{
+              padding: '10px 20px', 
+              backgroundColor: currentMode === 'erase_partial' ? '#ff9500' : '#ffffff', 
+              color: currentMode === 'erase_partial' ? '#ffffff' : '#333333',
+              border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'
+            }}
+          >
+            🧹 부분 지우개
+          </button>
 
-        <button 
-          onClick={() => setCurrentMode('erase_stroke')}
-          style={{
-            padding: '10px 20px', 
-            backgroundColor: currentMode === 'erase_stroke' ? '#5856d6' : '#ffffff', 
-            color: currentMode === 'erase_stroke' ? '#ffffff' : '#333333',
-            border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'
-          }}
-        >
-          ✒️ 획 전체 지우개
-        </button>
+          <button 
+            onClick={() => setCurrentMode('erase_stroke')}
+            style={{
+              padding: '10px 20px', 
+              backgroundColor: currentMode === 'erase_stroke' ? '#5856d6' : '#ffffff', 
+              color: currentMode === 'erase_stroke' ? '#ffffff' : '#333333',
+              border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'
+            }}
+          >
+            ✒️ 획 전체 지우개
+          </button>
 
-        <button 
-          onClick={handleUndo}
-          style={{
-            padding: '10px 20px', backgroundColor: '#ffffff', color: '#007aff',
-            border: '2px dashed #007aff', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'
-          }}
-        >
-          ↩️ 작업 되돌리기 (Undo)
-        </button>
+          <button 
+            onClick={handleUndo}
+            style={{
+              padding: '10px 20px', backgroundColor: '#ffffff', color: '#007aff',
+              border: '2px dashed #007aff', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'
+            }}
+          >
+            ↩️ 작업 되돌리기 (Undo)
+          </button>
 
-        <button 
-          onClick={clearCanvas}
-          style={{
-            padding: '10px 20px', backgroundColor: '#ff4d4f', color: 'white',
-            border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'
-          }}
-        >
-          💥 전체 화면 지우기
-        </button>
+          <button 
+            onClick={clearCanvas}
+            style={{
+              padding: '10px 20px', backgroundColor: '#ff4d4f', color: 'white',
+              border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'
+            }}
+          >
+            💥 전체 화면 지우기
+          </button>
+        </div>
+
+        {/* 하단 레이어: [신규] 실시간 펜 색상 선택기 패널 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'rgba(255,255,255,0.9)', padding: '8px 12px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', width: 'fit-content' }}>
+          <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#555' }}>🎨 펜 색상 :</span>
+          {colors.map((color) => (
+            <button
+              key={color}
+              onClick={() => {
+                setSelectedColor(color);
+                setCurrentMode('draw'); // 색상을 고르면 편의성을 위해 자동으로 그리기 모드로 전환되게 유도합니다.
+              }}
+              style={{
+                width: '28px',
+                height: '28px',
+                backgroundColor: color,
+                border: selectedColor === color ? '3px solid #333' : '1px solid rgba(0,0,0,0.2)',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                transform: selectedColor === color ? 'scale(1.15)' : 'scale(1)',
+                transition: 'transform 0.1s ease',
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)'
+              }}
+            />
+          ))}
+        </div>
+
       </div>
       
       <canvas
