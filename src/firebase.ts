@@ -2,7 +2,6 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 
-// Firebase 콘솔 웹 설정에서 복사한 내용을 여기에 붙여넣으세요!
 const firebaseConfig = {
   apiKey: "AIzaSyBCi44dm3XNtUHK5ezgSLqktUwUUsYeyys",
   authDomain: "colab-board-50c00.firebaseapp.com",
