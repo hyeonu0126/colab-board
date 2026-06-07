@@ -4,6 +4,14 @@ import { ref, onValue, push, set, remove, get } from "firebase/database";
 import { MeetingRoomLanding } from './MeetingRoomLanding';
 import { Peer } from 'peerjs'; 
 
+interface ImageData {
+  url: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 type ToolMode = 'draw' | 'erase_partial' | 'erase_stroke';
 
 type HistoryAction = {
@@ -13,6 +21,7 @@ type HistoryAction = {
 };
 
 function App() {
+  //const [images, setImages] = useState<Record<string, ImageData>>({});
   const [roomName, setRoomName] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
 
@@ -89,6 +98,9 @@ const WhiteboardCanvas: React.FC<CanvasProps> = ({ roomName, userName, onLeave }
   const [tempErasedLines, setTempErasedLines] = useState<any[]>([]);
 
   const [roomUsers, setRoomUsers] = useState<any[]>([]);
+
+  const [images, setImages] = useState<Record<string, any>>({});
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
 
   // 🎙️ 보이스톡 상태 관리 (최초 입장 시 음소거 true)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -329,31 +341,54 @@ const kickUser = async (targetUserName: string) => {
     }
   };
 
-  const renderCanvas = (canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, data: any) => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!data) return;
-    
-    Object.values(data).forEach((line: any) => {
-      ctx.beginPath();
-      ctx.moveTo(line.startX, line.startY);
-      ctx.lineTo(line.endX, line.endY);
-      ctx.strokeStyle = line.color || 'black';
-      ctx.lineWidth = line.lineWidth || 1; 
-      ctx.stroke();
+const renderCanvas = (canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, data: any, imagesData: Record<string, ImageData>) => {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+// 1. 저장된 이미지들 그리기
+  if (imagesData && typeof imagesData === 'object') {
+    // any로 설정된 데이터를 순회할 때 타입 단언(as ImageData)을 사용합니다.
+   Object.entries(imagesData).forEach(([_, img]) => {
+      const imageObj = new Image();
+      imageObj.src = img.url;
+      imageObj.onload = () => {
+        // 속성이 없을 경우를 대비해 기본값(||)을 명시합니다.
+        ctx.drawImage(imageObj, img.x, img.y, img.width, img.height);
+      };
     });
-  };
+  }
+
+  // 2. 선 그리기
+  if (!data) return;
+  Object.values(data).forEach((line: any) => {
+    ctx.beginPath();
+    ctx.moveTo(line.startX, line.startY);
+    ctx.lineTo(line.endX, line.endY);
+    ctx.strokeStyle = line.color || 'black';
+    ctx.lineWidth = line.lineWidth || 1;
+    ctx.stroke();
+  });
+};
+
+useEffect(() => {
+  const imagesRef = ref(db, `rooms/${roomName}/images`);
+  const unsubscribe = onValue(imagesRef, (snapshot) => {
+    setImages(snapshot.val() || {});
+  });
+  return () => unsubscribe();
+}, [roomName]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    
 
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
       ctx.lineCap = 'round';
-      if (firebaseData) renderCanvas(canvas, ctx, firebaseData);
+      renderCanvas(canvas, ctx, firebaseData || {}, images);
     };
 
     resizeCanvas();
@@ -427,6 +462,26 @@ const kickUser = async (targetUserName: string) => {
 
   const handleMouseDown = (e: React.MouseEvent) => {
     const clickPos = getMousePos(e);
+
+  // [추가] 이미지 클릭 여부 확인 (클릭한 좌표가 이미지 영역 안에 있는지)
+  const clickedImage = Object.entries(images).find(([_, img]) => {
+    return clickPos.x >= img.x && clickPos.x <= img.x + img.width &&
+           clickPos.y >= img.y && clickPos.y <= img.y + img.height;
+  });
+
+  if (clickedImage) {
+    const [imageId] = clickedImage;
+
+    // [삭제 로직] 부분 지우개 모드일 때 이미지를 클릭하면 삭제
+      if (currentMode === 'erase_partial') {
+        if (window.confirm('이 이미지를 삭제하시겠습니까?')) {
+          remove(ref(db, `rooms/${roomName}/images/${imageId}`));
+          return; // 삭제 후 드로잉 로직 실행 방지
+        }
+      }
+    setSelectedImageId(imageId);
+    return; // 이미지를 클릭했으면 드로잉 로직은 건너뜀
+  }
     if (currentMode === 'erase_partial' || currentMode === 'erase_stroke') {
       setIsErasing(true);
       setTempErasedLines([]); 
@@ -650,18 +705,74 @@ const kickUser = async (targetUserName: string) => {
           💥 회의방 삭제
         </button>
       </div>
+{/* 툴바 패널 안쪽(색상 선택기나 굵기 조절기 주변)에 추가 */}
+<div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+  <input 
+    type="file" 
+    accept="image/*" 
+    onChange={(e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        push(ref(db, `rooms/${roomName}/images`), { 
+          url: reader.result, 
+          x: 50, y: 50, width: 200, height: 200 
+        });
+      };
+      reader.readAsDataURL(file);
+    }} 
+    style={{ display: 'none' }} 
+    id="image-upload" 
+  />
 
+
+{/* 선택된 이미지 크기 조절 슬라이더 (좌측 하단 혹은 툴바 아래) */}
+{selectedImageId && (
+  <div style={{ 
+    position: 'absolute', bottom: '20px', left: '20px', padding: '15px', 
+    background: 'white', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+    zIndex: 20 
+  }}>
+    <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>이미지 크기 조절</div>
+    <input 
+      type="range" 
+      min="50" max="600" 
+      value={selectedImageId && images[selectedImageId] ? images[selectedImageId].width : 200}
+      onChange={(e) => {
+        const val = parseInt(e.target.value);
+        set(ref(db, `rooms/${roomName}/images/${selectedImageId}`), { 
+          ...images[selectedImageId], width: val, height: val 
+        });
+      }}
+    />
+    <button 
+      onClick={() => setSelectedImageId(null)}
+      style={{ marginLeft: '10px', padding: '4px 8px', cursor: 'pointer' }}
+    >닫기</button>
+  </div>
+)}
       {/* 좌측 상단 드로잉 툴바 패널 */}
       <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div
+  style={{
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap'
+  }}
+>
           <button onClick={() => setCurrentMode('draw')} style={{ padding: '10px 15px', backgroundColor: currentMode === 'draw' ? '#007aff' : '#ffffff', color: currentMode === 'draw' ? '#ffffff' : '#333333', border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>🎨 그리기 모드</button>
           <button onClick={() => setCurrentMode('erase_partial')} style={{ padding: '10px 15px', backgroundColor: currentMode === 'erase_partial' ? '#ff9500' : '#ffffff', color: currentMode === 'erase_partial' ? '#ffffff' : '#333333', border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>🧹 부분 지우개</button>
           <button onClick={() => setCurrentMode('erase_stroke')} style={{ padding: '10px 15px', backgroundColor: currentMode === 'erase_stroke' ? '#5856d6' : '#ffffff', color: currentMode === 'erase_stroke' ? '#ffffff' : '#333333', border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>✒️ 획 전체 지우개</button>
-          <button onClick={handleUndo} style={{ padding: '10px 15px', backgroundColor: '#ffffff', color: '#007aff', border: '2px dashed #007aff', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>↩️ Undo</button>
+          <button onClick={handleUndo} style={{ padding: '10px 15px', backgroundColor: '#ffffff', color: '#007aff', border: '2px dashed #007aff', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>↩️ 되돌리기</button>
           <button onClick={clearCanvas} style={{ padding: '10px 15px', backgroundColor: '#ffffff', color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>  전체 지우기</button>
+          <label htmlFor="image-upload" style={{ padding: '10px 15px', backgroundColor: '#64748b', color: 'white', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>
+      🖼️ 이미지 업로드
+    </label>
+  </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', backgroundColor: 'rgba(255,255,255,0.9)', padding: '10px 16px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', width: 'fit-content' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', backgroundColor: 'rgba(255,255,255,0.9)', padding: '10px 16px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', width: 'fit-content', zIndex: 9999, position:'relative',marginTop: '70px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#555' }}>색상:</span>
             {colors.map((color) => (
