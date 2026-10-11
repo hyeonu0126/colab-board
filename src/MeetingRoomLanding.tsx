@@ -113,27 +113,9 @@ export const MeetingRoomLanding: React.FC<MeetingRoomLandingProps> = ({ onJoinSu
       {/* 왼쪽: 로그인/입장 폼 카드 */}
       <div style={styles.card}>
         
-        {/* 🌟 수정 반영: 이미지 박스의 높이를 강제 제한하고 위아래 공백을 마스킹 컷(Crop) 처리 */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          alignItems: 'center', 
-          width: '100%', 
-          height: '160px',       /* 로고가 노출될 실제 세로 영역을 타이트하게 제한 */
-          overflow: 'hidden',    /* 제한된 높이를 벗어나는 상하 흰색 여백은 잘라버림 */
-          marginBottom: '20px',
-          borderRadius: '8px'
-        }}>
-          <img 
-            src="/logo.png?v=2" 
-            alt="Thinc Link Logo" 
-            style={{ 
-              width: '100%',     /* 부모 카드 가로폭(340px 내외)에 딱 맞게 풀사이즈 채움 */
-              height: '320px',   /* 원본 비율을 무너트리지 않고 중심부를 강조하기 위해 가상 높이 설정 */
-              objectFit: 'contain', /* 잘리지 않으면서 빈 여백만 컨트롤 */
-              marginTop: '0px'
-            }} 
-          />
+        <div style={styles.brand}>
+          <div style={styles.brandTitle}>Thinc Link</div>
+          <div style={styles.brandSub}>Draw it. Say it. Together.</div>
         </div>
 
         <div style={styles.tabContainer}>
@@ -208,23 +190,26 @@ export const MeetingRoomLanding: React.FC<MeetingRoomLandingProps> = ({ onJoinSu
 };
 
 const styles: { [key: string]: React.CSSProperties } = {
-  container: { display: 'flex', gap: '30px', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f4f6f9', fontFamily: 'sans-serif' },
-  card: { width: '400px', padding: '30px', borderRadius: '12px', backgroundColor: '#ffffff', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' },
-  tabContainer: { display: 'flex', marginBottom: '20px', borderRadius: '8px', backgroundColor: '#f1f5f9', padding: '4px' },
-  tab: { flex: 1, padding: '10px 0', border: 'none', borderRadius: '6px', backgroundColor: 'transparent', cursor: 'pointer', fontSize: '14px', color: '#64748b' },
-  activeTab: { backgroundColor: '#ffffff', color: '#0f172a', fontWeight: 'bold', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' },
+  container: { display: 'flex', gap: '24px', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', padding: '24px', flexWrap: 'wrap', background: 'radial-gradient(ellipse at 50% 0%, #262626 0%, #0a0a0a 60%)', fontFamily: 'var(--font-sans)', color: '#f5f5f5' },
+  card: { width: '400px', padding: '32px', borderRadius: '16px', backgroundColor: '#141414', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 24px 60px rgba(0,0,0,0.5)' },
+  brand: { textAlign: 'center', marginBottom: '24px' },
+  brandTitle: { fontSize: '40px', fontWeight: 700, letterSpacing: '-0.04em', lineHeight: 1.1, background: 'linear-gradient(180deg, #ffffff 30%, #8a8a8a 100%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'transparent' },
+  brandSub: { marginTop: '8px', fontSize: '12px', color: '#9a9a9a', fontFamily: 'var(--font-mono)' },
+  tabContainer: { display: 'flex', marginBottom: '20px', borderRadius: '999px', backgroundColor: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', padding: '4px' },
+  tab: { flex: 1, padding: '9px 0', border: 'none', borderRadius: '999px', backgroundColor: 'transparent', cursor: 'pointer', fontSize: '13px', color: '#9a9a9a' },
+  activeTab: { backgroundColor: '#262626', color: '#ffffff', fontWeight: 600 },
   form: { display: 'flex', flexDirection: 'column', gap: '15px' },
-  inputGroup: { display: 'flex', flexDirection: 'column', gap: '5px' },
-  label: { fontSize: '13px', color: '#475569', fontWeight: 600 },
-  input: { padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' },
-  submitBtn: { marginTop: '10px', padding: '12px', border: 'none', borderRadius: '6px', backgroundColor: '#3b82f6', color: 'white', fontSize: '15px', fontWeight: 'bold', cursor: 'pointer' },
-  listCard: { width: '350px', height: '530px', padding: '25px', borderRadius: '12px', backgroundColor: '#ffffff', boxShadow: '0 8px 24px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' },
-  listTitle: { fontSize: '16px', fontWeight: 'bold', color: '#0f172a', marginBottom: '15px', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px' },
+  inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  label: { fontSize: '12px', color: '#9a9a9a', fontWeight: 500 },
+  input: { padding: '11px 12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: '#0a0a0a', color: '#f5f5f5', fontSize: '14px', outline: 'none' },
+  submitBtn: { marginTop: '10px', padding: '12px', border: 'none', borderRadius: '999px', backgroundColor: '#f5f5f5', color: '#0a0a0a', fontSize: '14px', fontWeight: 600, cursor: 'pointer' },
+  listCard: { width: '350px', height: '560px', padding: '24px', borderRadius: '16px', backgroundColor: '#141414', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 24px 60px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column' },
+  listTitle: { fontSize: '13px', fontWeight: 500, color: '#9a9a9a', fontFamily: 'var(--font-mono)', margin: '0 0 15px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '12px' },
   listContainer: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' },
-  emptyText: { textAlign: 'center', color: '#94a3b8', fontSize: '14px', marginTop: '100px' },
-  roomItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', cursor: 'pointer', backgroundColor: '#f8fafc' },
+  emptyText: { textAlign: 'center', color: '#6b6b6b', fontSize: '13px', marginTop: '100px' },
+  roomItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', backgroundColor: '#1b1b1b' },
   roomInfo: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  roomItemName: { fontSize: '14px', fontWeight: 'bold', color: '#334155' },
-  roomStatus: { fontSize: '11px', color: '#10b981', fontWeight: 500 },
-  clickBadge: { fontSize: '11px', padding: '4px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', borderRadius: '12px', fontWeight: 'bold' }
+  roomItemName: { fontSize: '14px', fontWeight: 600, color: '#f5f5f5' },
+  roomStatus: { fontSize: '11px', color: '#4cd964', fontFamily: 'var(--font-mono)' },
+  clickBadge: { fontSize: '11px', padding: '4px 10px', backgroundColor: '#f5f5f5', color: '#0a0a0a', borderRadius: '999px', fontWeight: 600 }
 };
