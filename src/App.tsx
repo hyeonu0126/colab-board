@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { db } from './firebase'
-import { ref, onValue, push, set, remove, get } from "firebase/database";
+import { ref, onValue, push, set, remove, get, update, onDisconnect } from "firebase/database";
 import { MeetingRoomLanding } from './MeetingRoomLanding';
 import { Peer } from 'peerjs'; 
 import { ChatPanel } from './ChatPanel';
 import { VoicePanel } from './VoicePanel';
+import { PostIt } from './PostIt';
+import { POSTIT_COLORS } from './postitTypes';
+import type { PostItData } from './postitTypes';
 
 interface ImageData {
   url: string;
@@ -14,7 +17,20 @@ interface ImageData {
   height: number;
 }
 
-type ToolMode = 'draw' | 'erase_partial' | 'erase_stroke';
+type ToolMode = 'draw' | 'pointer' | 'erase_partial' | 'erase_stroke';
+
+interface PointerData {
+  x: number;
+  y: number;
+}
+
+// 닉네임으로 포인터 색상을 고정 결정 (모든 참여자 화면에서 동일)
+const POINTER_COLORS = ['#ff3b30', '#ff9500', '#34c759', '#007aff', '#af52de', '#ff2d92'];
+const pointerColor = (name: string) => {
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+  return POINTER_COLORS[Math.abs(hash) % POINTER_COLORS.length];
+};
 
 type HistoryAction = {
   type: 'draw' | 'erase';
@@ -142,6 +158,13 @@ const WhiteboardCanvas: React.FC<CanvasProps> = ({ theme, roomName, userName, on
 
   const [images, setImages] = useState<Record<string, any>>({});
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+
+  // 📝 포스트잇 상태
+  const [postits, setPostits] = useState<Record<string, PostItData>>({});
+
+  // 👆 포인터 상태 (다른 참여자의 포인터 위치)
+  const [pointers, setPointers] = useState<Record<string, PointerData>>({});
+  const lastPointerSentRef = useRef(0);
 
   // 🎙️ 보이스톡 상태 관리 (최초 입장 시 음소거 true)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -411,6 +434,61 @@ const renderCanvas = (canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, 
 };
 
 useEffect(() => {
+  const postitsRef = ref(db, `rooms/${roomName}/postits`);
+  const unsubscribe = onValue(postitsRef, (snapshot) => {
+    setPostits(snapshot.val() || {});
+  });
+  return () => unsubscribe();
+}, [roomName]);
+
+// 다른 참여자의 포인터 구독
+useEffect(() => {
+  const pointersRef = ref(db, `rooms/${roomName}/pointers`);
+  const unsubscribe = onValue(pointersRef, (snapshot) => {
+    setPointers(snapshot.val() || {});
+  });
+  return () => unsubscribe();
+}, [roomName]);
+
+// 포인터 모드에 있는 동안만 내 포인터를 노출하고, 모드 변경/퇴장/접속 끊김 시 제거
+useEffect(() => {
+  if (currentMode !== 'pointer') return;
+  const myPointerRef = ref(db, `rooms/${roomName}/pointers/${userName}`);
+  return () => {
+    remove(myPointerRef);
+  };
+}, [currentMode, roomName, userName]);
+
+const sendPointer = (e: React.MouseEvent) => {
+  const now = e.timeStamp;
+  if (now - lastPointerSentRef.current < 40) return; // 전송 빈도 제한
+  lastPointerSentRef.current = now;
+  const pos = getMousePos(e);
+  const myPointerRef = ref(db, `rooms/${roomName}/pointers/${userName}`);
+  onDisconnect(myPointerRef).remove();
+  update(myPointerRef, { x: pos.x, y: pos.y });
+};
+
+const hidePointer = () => {
+  if (currentMode === 'pointer') remove(ref(db, `rooms/${roomName}/pointers/${userName}`));
+};
+
+// 현재 보이는 캔버스 영역 중앙 근처에 새 포스트잇 생성
+const addPostit = () => {
+  const container = containerRef.current;
+  const count = Object.keys(postits).length;
+  const baseX = container ? container.clientWidth / 2 - 95 : 200;
+  const baseY = container ? container.clientHeight / 2 - 85 : 200;
+  push(ref(db, `rooms/${roomName}/postits`), {
+    x: Math.max(0, baseX + (count % 5) * 24),
+    y: Math.max(0, baseY + (count % 5) * 24),
+    text: '',
+    color: POSTIT_COLORS[count % POSTIT_COLORS.length],
+    author: userName,
+  });
+};
+
+useEffect(() => {
   const imagesRef = ref(db, `rooms/${roomName}/images`);
   const unsubscribe = onValue(imagesRef, (snapshot) => {
     setImages(snapshot.val() || {});
@@ -504,6 +582,7 @@ useEffect(() => {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (currentMode === 'pointer') return; // 포인터 모드에서는 그리기/지우기/이미지 선택 없음
     const clickPos = getMousePos(e);
 
   // [추가] 이미지 클릭 여부 확인 (클릭한 좌표가 이미지 영역 안에 있는지)
@@ -648,6 +727,7 @@ useEffect(() => {
   };
 
   const getCanvasCursor = () => {
+    if (currentMode === 'pointer') return 'crosshair';
     if (currentMode === 'erase_partial') return 'not-allowed';
     if (currentMode === 'erase_stroke') return 'cell';
     return 'default';
@@ -658,7 +738,12 @@ useEffect(() => {
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', fontFamily: 'var(--font-sans)', backgroundColor: 'var(--canvas-bg)' }}>
       {/* 좌측: 캔버스 영역 (툴바/이미지 슬라이더는 이 영역 기준으로 배치) */}
-      <div ref={containerRef} style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden' }}>
+      <div
+        ref={containerRef}
+        onMouseMove={currentMode === 'pointer' ? sendPointer : undefined}
+        onMouseLeave={hidePointer}
+        style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden' }}
+      >
 
       {/* 채팅 사이드바 열기/닫기 토글 */}
       <button
@@ -725,6 +810,7 @@ useEffect(() => {
   }}
 >
           <button onClick={() => setCurrentMode('draw')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'draw' ? 'var(--accent)' : 'var(--panel)', color: currentMode === 'draw' ? 'var(--accent-text)' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🎨 그리기 모드</button>
+          <button onClick={() => setCurrentMode('pointer')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'pointer' ? '#ff3b30' : 'var(--panel)', color: currentMode === 'pointer' ? '#ffffff' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>👆 포인터</button>
           <button onClick={() => setCurrentMode('erase_partial')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_partial' ? '#ff9500' : 'var(--panel)', color: currentMode === 'erase_partial' ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🧹 부분 지우개</button>
           <button onClick={() => setCurrentMode('erase_stroke')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_stroke' ? '#8b8aff' : 'var(--panel)', color: currentMode === 'erase_stroke' ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>✒️ 획 전체 지우개</button>
           <button onClick={handleUndo} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px dashed var(--dashed)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>↩️ 되돌리기</button>
@@ -732,6 +818,7 @@ useEffect(() => {
           <label htmlFor="image-upload" style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
       🖼️ 이미지 업로드
     </label>
+          <button onClick={addPostit} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>📝 포스트잇</button>
   </div>
         </div>
 
@@ -751,6 +838,20 @@ useEffect(() => {
         </div>
       </div>
       
+      {Object.entries(postits).map(([id, data]) => (
+        <PostIt key={id} roomName={roomName} id={id} data={data} />
+      ))}
+
+      {/* 다른 참여자의 포인터 (마우스 입력은 통과시킨다) */}
+      {Object.entries(pointers)
+        .filter(([name]) => name !== userName)
+        .map(([name, p]) => (
+          <div key={name} style={{ position: 'absolute', left: p.x, top: p.y, zIndex: 9, pointerEvents: 'none', transition: 'left 60ms linear, top 60ms linear' }}>
+            <div style={{ width: '14px', height: '14px', marginLeft: '-7px', marginTop: '-7px', borderRadius: '50%', backgroundColor: pointerColor(name), boxShadow: `0 0 0 3px ${pointerColor(name)}55, 0 0 12px ${pointerColor(name)}` }} />
+            <span style={{ position: 'absolute', left: '10px', top: '8px', padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap', backgroundColor: pointerColor(name), color: '#ffffff' }}>{name}</span>
+          </div>
+        ))}
+
       <canvas ref={canvasRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} onMouseLeave={handleMouseUp} style={{ display: 'block', backgroundColor: 'var(--canvas-bg)', cursor: getCanvasCursor() }} />
       </div>
 
