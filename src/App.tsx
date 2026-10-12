@@ -22,6 +22,7 @@ type ToolMode = 'draw' | 'pointer' | 'erase_partial' | 'erase_stroke';
 interface PointerData {
   x: number;
   y: number;
+  laser?: boolean; // 포인터 모드(레이저)로 가리키는 중인지
 }
 
 // 닉네임으로 포인터 색상을 고정 결정 (모든 참여자 화면에서 동일)
@@ -160,11 +161,17 @@ const WhiteboardCanvas: React.FC<CanvasProps> = ({ theme, roomName, userName, on
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
 
   // 📝 포스트잇 상태
+  const imageCache = useRef<Map<string, HTMLImageElement>>(new Map());
+  const [imageTick, setImageTick] = useState(0); // 이미지 로드 완료 시 캔버스 재렌더용
+  const imageDragRef = useRef<{ id: string; offsetX: number; offsetY: number; x: number; y: number } | null>(null);
+  const lastImageDragSentRef = useRef(0);
+
   const [postits, setPostits] = useState<Record<string, PostItData>>({});
 
   // 👆 포인터 상태 (다른 참여자의 포인터 위치)
   const [pointers, setPointers] = useState<Record<string, PointerData>>({});
   const lastPointerSentRef = useRef(0);
+  const pointerTimerRef = useRef<number | null>(null);
 
   // 🎙️ 보이스톡 상태 관리 (최초 입장 시 음소거 true)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -411,13 +418,18 @@ const renderCanvas = (canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, 
 // 1. 저장된 이미지들 그리기
   if (imagesData && typeof imagesData === 'object') {
     // any로 설정된 데이터를 순회할 때 타입 단언(as ImageData)을 사용합니다.
-   Object.entries(imagesData).forEach(([_, img]) => {
-      const imageObj = new Image();
-      imageObj.src = img.url;
-      imageObj.onload = () => {
-        // 속성이 없을 경우를 대비해 기본값(||)을 명시합니다.
+    Object.values(imagesData).forEach((img) => {
+      // 같은 URL은 한 번만 디코딩하고, 로드가 끝난 이미지는 즉시 그려서 선 아래에 깔리게 한다
+      let imageObj = imageCache.current.get(img.url);
+      if (!imageObj) {
+        imageObj = new Image();
+        imageObj.onload = () => setImageTick((t) => t + 1);
+        imageObj.src = img.url;
+        imageCache.current.set(img.url, imageObj);
+      }
+      if (imageObj.complete && imageObj.naturalWidth > 0) {
         ctx.drawImage(imageObj, img.x, img.y, img.width, img.height);
-      };
+      }
     });
   }
 
@@ -450,27 +462,37 @@ useEffect(() => {
   return () => unsubscribe();
 }, [roomName]);
 
-// 포인터 모드에 있는 동안만 내 포인터를 노출하고, 모드 변경/퇴장/접속 끊김 시 제거
+// 모든 모드에서 내 마우스 위치를 공유하고, 퇴장 시 제거
 useEffect(() => {
-  if (currentMode !== 'pointer') return;
   const myPointerRef = ref(db, `rooms/${roomName}/pointers/${userName}`);
   return () => {
+    if (pointerTimerRef.current) window.clearTimeout(pointerTimerRef.current);
     remove(myPointerRef);
   };
-}, [currentMode, roomName, userName]);
+}, [roomName, userName]);
 
 const sendPointer = (e: React.MouseEvent) => {
-  const now = e.timeStamp;
-  if (now - lastPointerSentRef.current < 40) return; // 전송 빈도 제한
-  lastPointerSentRef.current = now;
   const pos = getMousePos(e);
+  const laser = currentMode === 'pointer';
   const myPointerRef = ref(db, `rooms/${roomName}/pointers/${userName}`);
-  onDisconnect(myPointerRef).remove();
-  update(myPointerRef, { x: pos.x, y: pos.y });
+  const write = () => {
+    onDisconnect(myPointerRef).remove();
+    update(myPointerRef, { x: pos.x, y: pos.y, laser });
+  };
+
+  if (pointerTimerRef.current) window.clearTimeout(pointerTimerRef.current);
+  if (e.timeStamp - lastPointerSentRef.current >= 40) {
+    lastPointerSentRef.current = e.timeStamp;
+    write();
+  } else {
+    // 전송 빈도 제한에 걸린 마지막 위치도 잃지 않도록 잠시 후 한 번 더 보낸다
+    pointerTimerRef.current = window.setTimeout(write, 40);
+  }
 };
 
 const hidePointer = () => {
-  if (currentMode === 'pointer') remove(ref(db, `rooms/${roomName}/pointers/${userName}`));
+  if (pointerTimerRef.current) window.clearTimeout(pointerTimerRef.current);
+  remove(ref(db, `rooms/${roomName}/pointers/${userName}`));
 };
 
 // 현재 보이는 캔버스 영역 중앙 근처에 새 포스트잇 생성
@@ -515,16 +537,18 @@ useEffect(() => {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    const unsubscribe = onValue(linesRef, (snapshot) => {
-      const data = snapshot.val();
-      setFirebaseData(data);
-    });
-
     return () => {
       window.removeEventListener('resize', resizeCanvas);
-      unsubscribe();
     };
-  }, [firebaseData, theme, isChatOpen]);
+  }, [firebaseData, images, theme, isChatOpen, imageTick]);
+
+  // 선 데이터는 방 단위로 한 번만 구독한다
+  useEffect(() => {
+    const unsubscribe = onValue(ref(db, `rooms/${roomName}/lines`), (snapshot) => {
+      setFirebaseData(snapshot.val());
+    });
+    return () => unsubscribe();
+  }, [roomName]);
 
   const getMousePos = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;
@@ -586,13 +610,13 @@ useEffect(() => {
     const clickPos = getMousePos(e);
 
   // [추가] 이미지 클릭 여부 확인 (클릭한 좌표가 이미지 영역 안에 있는지)
-  const clickedImage = Object.entries(images).find(([_, img]) => {
+  const clickedImage = Object.entries(images).reverse().find(([, img]) => {
     return clickPos.x >= img.x && clickPos.x <= img.x + img.width &&
            clickPos.y >= img.y && clickPos.y <= img.y + img.height;
   });
 
   if (clickedImage) {
-    const [imageId] = clickedImage;
+    const [imageId, clickedImg] = clickedImage;
 
     // [삭제 로직] 부분 지우개 모드일 때 이미지를 클릭하면 삭제
       if (currentMode === 'erase_partial') {
@@ -602,6 +626,14 @@ useEffect(() => {
         }
       }
     setSelectedImageId(imageId);
+    // 드래그로 위치 이동 시작 (클릭 지점과 이미지 좌상단의 차이를 기억)
+    imageDragRef.current = {
+      id: imageId,
+      offsetX: clickPos.x - clickedImg.x,
+      offsetY: clickPos.y - clickedImg.y,
+      x: clickedImg.x,
+      y: clickedImg.y,
+    };
     return; // 이미지를 클릭했으면 드로잉 로직은 건너뜀
   }
     if (currentMode === 'erase_partial' || currentMode === 'erase_stroke') {
@@ -644,6 +676,17 @@ useEffect(() => {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const currentPos = getMousePos(e);
+
+    const imageDrag = imageDragRef.current;
+    if (imageDrag) {
+      imageDrag.x = currentPos.x - imageDrag.offsetX;
+      imageDrag.y = currentPos.y - imageDrag.offsetY;
+      if (e.timeStamp - lastImageDragSentRef.current >= 40) {
+        lastImageDragSentRef.current = e.timeStamp;
+        update(ref(db, `rooms/${roomName}/images/${imageDrag.id}`), { x: imageDrag.x, y: imageDrag.y });
+      }
+      return;
+    }
     if ((currentMode === 'erase_partial' || currentMode === 'erase_stroke') && isErasing) {
       handleEraserAction(currentPos);
     } else if (currentMode === 'draw' && isDrawing && currentStrokeId) {
@@ -676,6 +719,12 @@ useEffect(() => {
   };
 
   const handleMouseUp = () => {
+    // 이미지 드래그 종료: 마지막 위치를 확정 저장
+    const imageDrag = imageDragRef.current;
+    if (imageDrag) {
+      update(ref(db, `rooms/${roomName}/images/${imageDrag.id}`), { x: imageDrag.x, y: imageDrag.y });
+      imageDragRef.current = null;
+    }
     if (currentMode === 'draw' && isDrawing && currentStrokeId) {
       setHistoryStack((prev) => [...prev, { type: 'draw', strokeId: currentStrokeId }]);
     } else if ((currentMode === 'erase_partial' || currentMode === 'erase_stroke') && isErasing) {
@@ -740,7 +789,7 @@ useEffect(() => {
       {/* 좌측: 캔버스 영역 (툴바/이미지 슬라이더는 이 영역 기준으로 배치) */}
       <div
         ref={containerRef}
-        onMouseMove={currentMode === 'pointer' ? sendPointer : undefined}
+        onMouseMove={sendPointer}
         onMouseLeave={hidePointer}
         style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden' }}
       >
@@ -847,8 +896,14 @@ useEffect(() => {
         .filter(([name]) => name !== userName)
         .map(([name, p]) => (
           <div key={name} style={{ position: 'absolute', left: p.x, top: p.y, zIndex: 9, pointerEvents: 'none', transition: 'left 60ms linear, top 60ms linear' }}>
-            <div style={{ width: '14px', height: '14px', marginLeft: '-7px', marginTop: '-7px', borderRadius: '50%', backgroundColor: pointerColor(name), boxShadow: `0 0 0 3px ${pointerColor(name)}55, 0 0 12px ${pointerColor(name)}` }} />
-            <span style={{ position: 'absolute', left: '10px', top: '8px', padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap', backgroundColor: pointerColor(name), color: '#ffffff' }}>{name}</span>
+            {p.laser ? (
+              <div style={{ width: '14px', height: '14px', marginLeft: '-7px', marginTop: '-7px', borderRadius: '50%', backgroundColor: pointerColor(name), boxShadow: `0 0 0 3px ${pointerColor(name)}55, 0 0 12px ${pointerColor(name)}` }} />
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" style={{ display: 'block', overflow: 'visible', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}>
+                <path d="M0 0 L0 12 L3.5 9 L6 14 L8 13 L5.5 8 L10 8 Z" fill={pointerColor(name)} stroke="#ffffff" strokeWidth="1" />
+              </svg>
+            )}
+            <span style={{ position: 'absolute', left: p.laser ? '10px' : '14px', top: p.laser ? '8px' : '14px', padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap', backgroundColor: pointerColor(name), color: '#ffffff' }}>{name}</span>
           </div>
         ))}
 
