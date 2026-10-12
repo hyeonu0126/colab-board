@@ -3,6 +3,8 @@ import { db } from './firebase'
 import { ref, onValue, push, set, remove, get } from "firebase/database";
 import { MeetingRoomLanding } from './MeetingRoomLanding';
 import { Peer } from 'peerjs'; 
+import { ChatPanel } from './ChatPanel';
+import { VoicePanel } from './VoicePanel';
 
 interface ImageData {
   url: string;
@@ -110,6 +112,16 @@ interface RemoteUserAudio {
 
 const WhiteboardCanvas: React.FC<CanvasProps> = ({ theme, roomName, userName, onLeave }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // 💬 채팅 사이드바 상태
+  const [isChatOpen, setIsChatOpen] = useState(true);
+  const [hasUnread, setHasUnread] = useState(false);
+  const isChatOpenRef = useRef(true);
+  useEffect(() => {
+    isChatOpenRef.current = isChatOpen;
+  }, [isChatOpen]);
+
   const [isDrawing, setIsDrawing] = useState(false);
   const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
   
@@ -414,8 +426,10 @@ useEffect(() => {
     
 
     const resizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      // 사이드바를 제외한 캔버스 컨테이너 크기에 맞춘다
+      const container = containerRef.current;
+      canvas.width = container ? container.clientWidth : window.innerWidth;
+      canvas.height = container ? container.clientHeight : window.innerHeight;
       ctx.lineCap = 'round';
       renderCanvas(canvas, ctx, firebaseData || {}, images);
     };
@@ -432,7 +446,7 @@ useEffect(() => {
       window.removeEventListener('resize', resizeCanvas);
       unsubscribe();
     };
-  }, [firebaseData, theme]);
+  }, [firebaseData, theme, isChatOpen]);
 
   const getMousePos = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;
@@ -642,98 +656,18 @@ useEffect(() => {
   const colors = ['#f5f5f5', '#ff3b30', '#007aff', '#4cd964', '#ffcc00', '#5856d6'];
 
   return (
-    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative', fontFamily: 'var(--font-sans)', backgroundColor: 'var(--canvas-bg)' }}>
-      
-      {/* 우측 상단 실시간 참여자 및 볼륨 조절 패널 */}
-      <div style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 10, backgroundColor: 'var(--panel-glass)', backdropFilter: 'blur(12px)', color: 'var(--text)', padding: '16px 18px', borderRadius: '16px', boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid var(--border)', minWidth: '200px' }}>
-        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>🏠 방: {roomName}</div>
-        
-        <button
-          onClick={toggleMute}
-          disabled={!localStream}
-          style={{
-            padding: '7px 10px',
-            backgroundColor: isMuted ? '#ef4444' : '#10b981',
-            color: 'white',
-            border: 'none',
-            borderRadius: '999px',
-            cursor: localStream ? 'pointer' : 'not-allowed',
-            fontSize: '11px',
-            fontWeight: 'bold',
-            marginTop: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '4px',
-            opacity: localStream ? 1 : 0.6
-          }}
-        >
-          {isMuted ? '🔇 마이크 음소거 상태' : '🎙️ 보이스톡 방송 중'}
-        </button>
+    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', fontFamily: 'var(--font-sans)', backgroundColor: 'var(--canvas-bg)' }}>
+      {/* 좌측: 캔버스 영역 (툴바/이미지 슬라이더는 이 영역 기준으로 배치) */}
+      <div ref={containerRef} style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden' }}>
 
-        <div style={{ height: '1px', backgroundColor: 'var(--border)', margin: '4px 0' }} />
-        <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', marginBottom: '2px' }}>🟢 참여자 목소리 조절 ({roomUsers.length})</div>
-        
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '160px', overflowY: 'auto', marginBottom: '10px', paddingRight: '2px' }}>
-          {roomUsers.map((user: any) => {
-  const isMe = user.userName === userName;
-  const currentVol = volumes[user.userName] !== undefined ? volumes[user.userName] : 0.8;
-
-  return (
-    <div key={user.userName} style={{ display: 'flex', flexDirection: 'column', gap: '2px', backgroundColor: 'var(--panel-2)', padding: '8px', borderRadius: '10px', border: '1px solid var(--border-soft)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: '12px', color: isMe ? 'var(--text)' : 'var(--text-soft)', fontWeight: isMe ? 'bold' : 'normal' }}>
-          • {user.userName} {isMe && '(나)'}
-        </div>
-        {!isMe && (
-          <button 
-            onClick={() => kickUser(user.userName)}
-            style={{ fontSize: '10px', color: 'var(--danger)', border: '1px solid var(--danger-border)', background: 'none', borderRadius: '999px', cursor: 'pointer', padding: '1px 4px' }}
-          >
-            강퇴
-          </button>
-        )}
-      </div>
-                {!isMe && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>🔈</span>
-                    <input 
-                      type="range" 
-                      min="0" 
-                      max="1" 
-                      step="0.05" 
-                      value={currentVol} 
-                      onChange={(e) => handleVolumeChange(user.userName, parseFloat(e.target.value))}
-                      style={{ width: '100%', height: '4px', cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: '10px', color: 'var(--text-dim)', minWidth: '22px', textAlign: 'right' }}>
-                      {Math.round(currentVol * 100)}%
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        
-        <button 
-          onClick={onLeave} 
-          style={{ padding: '9px', backgroundColor: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: '999px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', transition: 'background-color 0.2s', marginBottom: '4px' }}
-          onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--accent)'}
-        >
-          🚪 회의방 나가기
-        </button>
-
-        <button 
-          onClick={handleDeleteRoom} 
-          style={{ padding: '9px', backgroundColor: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger-border)', borderRadius: '999px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', transition: 'background-color 0.2s' }}
-          onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--danger-hover)'}
-          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-        >
-          💥 회의방 삭제
-        </button>
-      </div>
+      {/* 채팅 사이드바 열기/닫기 토글 */}
+      <button
+        onClick={() => { setIsChatOpen((v) => !v); setHasUnread(false); }}
+        style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 10, padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}
+      >
+        {isChatOpen ? '💬 채팅 닫기' : '💬 채팅 열기'}
+        {!isChatOpen && hasUnread && <span style={{ display: 'inline-block', width: '8px', height: '8px', marginLeft: '6px', borderRadius: '50%', backgroundColor: '#ef4444' }} />}
+      </button>
 {/* 툴바 패널 안쪽(색상 선택기나 굵기 조절기 주변)에 추가 */}
 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
   <input 
@@ -818,6 +752,42 @@ useEffect(() => {
       </div>
       
       <canvas ref={canvasRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} onMouseLeave={handleMouseUp} style={{ display: 'block', backgroundColor: 'var(--canvas-bg)', cursor: getCanvasCursor() }} />
+      </div>
+
+      {/* 우측: 채팅 사이드바 (닫아도 마운트 유지해서 새 메시지 알림을 받는다) */}
+      <aside style={{ display: isChatOpen ? 'flex' : 'none', flexDirection: 'column', width: '320px', flexShrink: 0, backgroundColor: 'var(--panel)', color: 'var(--text)', borderLeft: '1px solid var(--border)' }}>
+        <div style={{ padding: '14px 16px', fontSize: '14px', fontWeight: 600, borderBottom: '1px solid var(--border)', paddingRight: '16px' }}>
+          🏠 방: {roomName}
+        </div>
+
+        <ChatPanel roomName={roomName} userName={userName} onNewMessage={() => { if (!isChatOpenRef.current) setHasUnread(true); }} />
+
+        <VoicePanel
+          userName={userName}
+          roomUsers={roomUsers}
+          localStream={localStream}
+          isMuted={isMuted}
+          volumes={volumes}
+          toggleMute={toggleMute}
+          handleVolumeChange={handleVolumeChange}
+          kickUser={kickUser}
+        />
+
+        <div style={{ display: 'flex', gap: '8px', padding: '10px 12px', borderTop: '1px solid var(--border)' }}>
+          <button
+            onClick={onLeave}
+            style={{ flex: 1, padding: '9px', backgroundColor: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: '999px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+          >
+            🚪 나가기
+          </button>
+          <button
+            onClick={handleDeleteRoom}
+            style={{ flex: 1, padding: '9px', backgroundColor: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger-border)', borderRadius: '999px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+          >
+            💥 방 삭제
+          </button>
+        </div>
+      </aside>
     </div>
   );
 };
