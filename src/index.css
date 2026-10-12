@@ -1,16 +1,72 @@
 /* Aloud 스타일 다크 테마 공통 변수 */
+/* 다크 테마 (기본) */
 :root {
   --bg: #0a0a0a;
   --panel: #141414;
   --panel-2: #1b1b1b;
+  --panel-glass: rgba(20, 20, 20, 0.92);
+  --input-bg: #0a0a0a;
+  --tab-active: #262626;
   --border: rgba(255, 255, 255, 0.1);
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --divider: rgba(255, 255, 255, 0.15);
+  --dashed: rgba(255, 255, 255, 0.35);
   --text: #f5f5f5;
+  --text-btn: #e5e5e5;
+  --text-soft: #c4c4c4;
   --text-dim: #9a9a9a;
   --text-faint: #6b6b6b;
   --accent: #f5f5f5;
+  --accent-text: #0a0a0a;
+  --accent-hover: #d4d4d4;
+  --canvas-bg: #0e0e0e;
+  --page-gradient: radial-gradient(ellipse at 50% 0%, #262626 0%, #0a0a0a 60%);
+  --title-gradient: linear-gradient(180deg, #ffffff 30%, #8a8a8a 100%);
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --danger: #ff6b6b;
+  --danger-border: rgba(255, 107, 107, 0.5);
+  --danger-hover: rgba(255, 107, 107, 0.15);
+  --ok: #4cd964;
+  --swatch-ring: #ffffff;
+  --scroll: rgba(255, 255, 255, 0.18);
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   color-scheme: dark;
+}
+
+/* 라이트 테마 */
+:root[data-theme='light'] {
+  --bg: #f4f4f2;
+  --panel: #ffffff;
+  --panel-2: #f3f3f1;
+  --panel-glass: rgba(255, 255, 255, 0.94);
+  --input-bg: #fafafa;
+  --tab-active: #ffffff;
+  --border: rgba(0, 0, 0, 0.12);
+  --border-soft: rgba(0, 0, 0, 0.08);
+  --divider: rgba(0, 0, 0, 0.15);
+  --dashed: rgba(0, 0, 0, 0.35);
+  --text: #0a0a0a;
+  --text-btn: #262626;
+  --text-soft: #404040;
+  --text-dim: #6b6b6b;
+  --text-faint: #9a9a9a;
+  --accent: #0a0a0a;
+  --accent-text: #f5f5f5;
+  --accent-hover: #2e2e2e;
+  --canvas-bg: #f0f0f0;
+  --page-gradient: radial-gradient(ellipse at 50% 0%, #ffffff 0%, #f4f4f2 60%);
+  --title-gradient: linear-gradient(180deg, #0a0a0a 30%, #6b6b6b 100%);
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 12px 32px rgba(0, 0, 0, 0.1);
+  --danger: #d92d20;
+  --danger-border: rgba(217, 45, 32, 0.5);
+  --danger-hover: rgba(217, 45, 32, 0.1);
+  --ok: #138a3d;
+  --swatch-ring: #0a0a0a;
+  --scroll: rgba(0, 0, 0, 0.2);
+  color-scheme: light;
 }
 
 * {
@@ -36,11 +92,11 @@ input::placeholder {
 }
 
 input:focus {
-  border-color: rgba(255, 255, 255, 0.35) !important;
+  border-color: var(--dashed) !important;
 }
 
 input[type='range'] {
-  accent-color: #f5f5f5;
+  accent-color: var(--accent);
 }
 
 button:not(:disabled):hover,
@@ -53,6 +109,6 @@ label[for='image-upload']:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--scroll);
   border-radius: 999px;
 }

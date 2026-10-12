@@ -25,6 +25,26 @@ function App() {
   const [roomName, setRoomName] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
 
+  // 다크/라이트 테마 (기본 다크, 선택은 localStorage에 기억)
+  const [theme, setTheme] = useState<Theme>(() => {
+    try {
+      return localStorage.getItem(THEME_STORAGE_KEY) === 'light' ? 'light' : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // 저장소를 쓸 수 없어도 테마 전환은 동작해야 하므로 무시
+    }
+  }, [theme]);
+
+  const handleToggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+
   // 🚪 방 입장 전 닉네임 중복 검사를 위한 헬퍼 핸들러
   const handleJoinAttempt = async (joinedRoomName: string, authenticatedUserName: string) => {
     const usersRef = ref(db, `rooms/${joinedRoomName}/users`);
@@ -60,13 +80,22 @@ function App() {
   };
 
   if (roomName && userName) {
-    return <WhiteboardCanvas roomName={roomName} userName={userName} onLeave={handleLeaveRoom} />;
+    return <WhiteboardCanvas theme={theme} roomName={roomName} userName={userName} onLeave={handleLeaveRoom} />;
   }
 
-  return <MeetingRoomLanding onJoinSuccess={(room, user) => handleJoinAttempt(room, user)} />;
+  return <MeetingRoomLanding theme={theme} onToggleTheme={handleToggleTheme} onJoinSuccess={(room, user) => handleJoinAttempt(room, user)} />;
 }
 
+type Theme = 'dark' | 'light';
+
+// 기본 펜색(과거 black 포함)은 표시할 때만 현재 테마에 맞는 색으로 바꾼다 (DB 값은 유지)
+const inkColor = (color: string | undefined, theme: Theme) =>
+  (!color || color === 'black' || color === '#f5f5f5') ? (theme === 'dark' ? '#f5f5f5' : '#111111') : color;
+
+const THEME_STORAGE_KEY = 'colab-board-theme';
+
 interface CanvasProps {
+  theme: Theme;
   roomName: string;
   userName: string;
   onLeave: () => void;
@@ -79,7 +108,7 @@ interface RemoteUserAudio {
   audioElement: HTMLAudioElement;
 }
 
-const WhiteboardCanvas: React.FC<CanvasProps> = ({ roomName, userName, onLeave }) => {
+const WhiteboardCanvas: React.FC<CanvasProps> = ({ theme, roomName, userName, onLeave }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
@@ -363,7 +392,7 @@ const renderCanvas = (canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, 
     ctx.beginPath();
     ctx.moveTo(line.startX, line.startY);
     ctx.lineTo(line.endX, line.endY);
-    ctx.strokeStyle = (!line.color || line.color === 'black') ? '#f5f5f5' : line.color;
+    ctx.strokeStyle = inkColor(line.color, theme);
     ctx.lineWidth = line.lineWidth || 1;
     ctx.stroke();
   });
@@ -403,7 +432,7 @@ useEffect(() => {
       window.removeEventListener('resize', resizeCanvas);
       unsubscribe();
     };
-  }, [firebaseData]);
+  }, [firebaseData, theme]);
 
   const getMousePos = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;
@@ -500,7 +529,7 @@ useEffect(() => {
       ctx.beginPath();
       ctx.moveTo(clickPos.x, clickPos.y);
       ctx.lineTo(clickPos.x + 0.1, clickPos.y + 0.1); 
-      ctx.strokeStyle = selectedColor;
+      ctx.strokeStyle = inkColor(selectedColor, theme);
       ctx.lineWidth = lineWidth; 
       ctx.stroke();
 
@@ -533,7 +562,7 @@ useEffect(() => {
       ctx.beginPath();
       ctx.moveTo(lastPos.x, lastPos.y);
       ctx.lineTo(currentPos.x, currentPos.y);
-      ctx.strokeStyle = selectedColor;
+      ctx.strokeStyle = inkColor(selectedColor, theme);
       ctx.lineWidth = lineWidth; 
       ctx.stroke();
 
@@ -613,11 +642,11 @@ useEffect(() => {
   const colors = ['#f5f5f5', '#ff3b30', '#007aff', '#4cd964', '#ffcc00', '#5856d6'];
 
   return (
-    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative', fontFamily: 'var(--font-sans)', backgroundColor: '#0e0e0e' }}>
+    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative', fontFamily: 'var(--font-sans)', backgroundColor: 'var(--canvas-bg)' }}>
       
       {/* 우측 상단 실시간 참여자 및 볼륨 조절 패널 */}
-      <div style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 10, backgroundColor: 'rgba(20, 20, 20, 0.92)', backdropFilter: 'blur(12px)', color: '#f5f5f5', padding: '16px 18px', borderRadius: '16px', boxShadow: '0 24px 60px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-        <div style={{ fontSize: '14px', fontWeight: 600, color: '#f5f5f5' }}>🏠 방: {roomName}</div>
+      <div style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 10, backgroundColor: 'var(--panel-glass)', backdropFilter: 'blur(12px)', color: 'var(--text)', padding: '16px 18px', borderRadius: '16px', boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid var(--border)', minWidth: '200px' }}>
+        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>🏠 방: {roomName}</div>
         
         <button
           onClick={toggleMute}
@@ -642,8 +671,8 @@ useEffect(() => {
           {isMuted ? '🔇 마이크 음소거 상태' : '🎙️ 보이스톡 방송 중'}
         </button>
 
-        <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
-        <div style={{ fontSize: '11px', fontWeight: 500, color: '#9a9a9a', fontFamily: 'var(--font-mono)', marginBottom: '2px' }}>🟢 참여자 목소리 조절 ({roomUsers.length})</div>
+        <div style={{ height: '1px', backgroundColor: 'var(--border)', margin: '4px 0' }} />
+        <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', marginBottom: '2px' }}>🟢 참여자 목소리 조절 ({roomUsers.length})</div>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '160px', overflowY: 'auto', marginBottom: '10px', paddingRight: '2px' }}>
           {roomUsers.map((user: any) => {
@@ -651,15 +680,15 @@ useEffect(() => {
   const currentVol = volumes[user.userName] !== undefined ? volumes[user.userName] : 0.8;
 
   return (
-    <div key={user.userName} style={{ display: 'flex', flexDirection: 'column', gap: '2px', backgroundColor: '#1b1b1b', padding: '8px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+    <div key={user.userName} style={{ display: 'flex', flexDirection: 'column', gap: '2px', backgroundColor: 'var(--panel-2)', padding: '8px', borderRadius: '10px', border: '1px solid var(--border-soft)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: '12px', color: isMe ? '#ffffff' : '#c4c4c4', fontWeight: isMe ? 'bold' : 'normal' }}>
+        <div style={{ fontSize: '12px', color: isMe ? 'var(--text)' : 'var(--text-soft)', fontWeight: isMe ? 'bold' : 'normal' }}>
           • {user.userName} {isMe && '(나)'}
         </div>
         {!isMe && (
           <button 
             onClick={() => kickUser(user.userName)}
-            style={{ fontSize: '10px', color: '#ff6b6b', border: '1px solid rgba(255,107,107,0.5)', background: 'none', borderRadius: '999px', cursor: 'pointer', padding: '1px 4px' }}
+            style={{ fontSize: '10px', color: 'var(--danger)', border: '1px solid var(--danger-border)', background: 'none', borderRadius: '999px', cursor: 'pointer', padding: '1px 4px' }}
           >
             강퇴
           </button>
@@ -667,7 +696,7 @@ useEffect(() => {
       </div>
                 {!isMe && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                    <span style={{ fontSize: '10px', color: '#9a9a9a' }}>🔈</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>🔈</span>
                     <input 
                       type="range" 
                       min="0" 
@@ -677,7 +706,7 @@ useEffect(() => {
                       onChange={(e) => handleVolumeChange(user.userName, parseFloat(e.target.value))}
                       style={{ width: '100%', height: '4px', cursor: 'pointer' }}
                     />
-                    <span style={{ fontSize: '10px', color: '#9a9a9a', minWidth: '22px', textAlign: 'right' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--text-dim)', minWidth: '22px', textAlign: 'right' }}>
                       {Math.round(currentVol * 100)}%
                     </span>
                   </div>
@@ -689,17 +718,17 @@ useEffect(() => {
         
         <button 
           onClick={onLeave} 
-          style={{ padding: '9px', backgroundColor: '#f5f5f5', color: '#0a0a0a', border: 'none', borderRadius: '999px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', transition: 'background-color 0.2s', marginBottom: '4px' }}
-          onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#d4d4d4'}
-          onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+          style={{ padding: '9px', backgroundColor: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: '999px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', transition: 'background-color 0.2s', marginBottom: '4px' }}
+          onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
+          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--accent)'}
         >
           🚪 회의방 나가기
         </button>
 
         <button 
           onClick={handleDeleteRoom} 
-          style={{ padding: '9px', backgroundColor: 'transparent', color: '#ff6b6b', border: '1px solid rgba(255,107,107,0.5)', borderRadius: '999px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', transition: 'background-color 0.2s' }}
-          onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,107,107,0.15)'}
+          style={{ padding: '9px', backgroundColor: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger-border)', borderRadius: '999px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', transition: 'background-color 0.2s' }}
+          onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--danger-hover)'}
           onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
         >
           💥 회의방 삭제
@@ -731,7 +760,7 @@ useEffect(() => {
 {selectedImageId && (
   <div style={{ 
     position: 'absolute', bottom: '20px', left: '20px', padding: '15px', 
-    background: 'rgba(20,20,20,0.92)', color: '#f5f5f5', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+    background: 'var(--panel-glass)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '14px', boxShadow: 'var(--shadow)',
     zIndex: 20 
   }}>
     <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>이미지 크기 조절</div>
@@ -748,7 +777,7 @@ useEffect(() => {
     />
     <button 
       onClick={() => setSelectedImageId(null)}
-      style={{ marginLeft: '10px', padding: '4px 12px', cursor: 'pointer', background: '#f5f5f5', color: '#0a0a0a', border: 'none', borderRadius: '999px', fontWeight: 600 }}
+      style={{ marginLeft: '10px', padding: '4px 12px', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: '999px', fontWeight: 600 }}
     >닫기</button>
   </div>
 )}
@@ -761,34 +790,34 @@ useEffect(() => {
     flexWrap: 'wrap'
   }}
 >
-          <button onClick={() => setCurrentMode('draw')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'draw' ? '#f5f5f5' : '#141414', color: currentMode === 'draw' ? '#0a0a0a' : '#e5e5e5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🎨 그리기 모드</button>
-          <button onClick={() => setCurrentMode('erase_partial')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_partial' ? '#ff9500' : '#141414', color: currentMode === 'erase_partial' ? '#0a0a0a' : '#e5e5e5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🧹 부분 지우개</button>
-          <button onClick={() => setCurrentMode('erase_stroke')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_stroke' ? '#8b8aff' : '#141414', color: currentMode === 'erase_stroke' ? '#0a0a0a' : '#e5e5e5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>✒️ 획 전체 지우개</button>
-          <button onClick={handleUndo} style={{ padding: '9px 14px', backgroundColor: '#141414', color: '#e5e5e5', border: '1px dashed rgba(255,255,255,0.35)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>↩️ 되돌리기</button>
-          <button onClick={clearCanvas} style={{ padding: '9px 14px', backgroundColor: '#141414', color: '#ff6b6b', border: '1px solid rgba(255,107,107,0.5)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>  전체 지우기</button>
-          <label htmlFor="image-upload" style={{ padding: '9px 14px', backgroundColor: '#141414', color: '#e5e5e5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
+          <button onClick={() => setCurrentMode('draw')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'draw' ? 'var(--accent)' : 'var(--panel)', color: currentMode === 'draw' ? 'var(--accent-text)' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🎨 그리기 모드</button>
+          <button onClick={() => setCurrentMode('erase_partial')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_partial' ? '#ff9500' : 'var(--panel)', color: currentMode === 'erase_partial' ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🧹 부분 지우개</button>
+          <button onClick={() => setCurrentMode('erase_stroke')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_stroke' ? '#8b8aff' : 'var(--panel)', color: currentMode === 'erase_stroke' ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>✒️ 획 전체 지우개</button>
+          <button onClick={handleUndo} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px dashed var(--dashed)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>↩️ 되돌리기</button>
+          <button onClick={clearCanvas} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--danger)', border: '1px solid var(--danger-border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>  전체 지우기</button>
+          <label htmlFor="image-upload" style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
       🖼️ 이미지 업로드
     </label>
   </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', backgroundColor: 'rgba(20,20,20,0.92)', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 18px', borderRadius: '999px', boxShadow: '0 12px 32px rgba(0,0,0,0.4)', width: 'fit-content', zIndex: 9999, position:'relative',marginTop: '70px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', backgroundColor: 'var(--panel-glass)', border: '1px solid var(--border)', padding: '10px 18px', borderRadius: '999px', boxShadow: 'var(--shadow-sm)', width: 'fit-content', zIndex: 9999, position:'relative',marginTop: '70px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: '#9a9a9a', fontFamily: 'var(--font-mono)' }}>색상</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>색상</span>
             {colors.map((color) => (
-              <button key={color} onClick={() => { setSelectedColor(color); setCurrentMode('draw'); }} style={{ width: '24px', height: '24px', backgroundColor: color, border: selectedColor === color ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', cursor: 'pointer', transform: selectedColor === color ? 'scale(1.1)' : 'scale(1)', transition: 'transform 0.1s ease' }} />
+              <button key={color} onClick={() => { setSelectedColor(color); setCurrentMode('draw'); }} style={{ width: '24px', height: '24px', backgroundColor: inkColor(color, theme), border: selectedColor === color ? '2px solid var(--swatch-ring)' : '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', cursor: 'pointer', transform: selectedColor === color ? 'scale(1.1)' : 'scale(1)', transition: 'transform 0.1s ease' }} />
             ))}
           </div>
-          <div style={{ width: '1px', height: '20px', backgroundColor: 'rgba(255,255,255,0.15)' }} />
+          <div style={{ width: '1px', height: '20px', backgroundColor: 'var(--divider)' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '12px', color: '#9a9a9a', fontFamily: 'var(--font-mono)' }}>굵기</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>굵기</span>
             <input type="range" min="1" max="20" step="1" value={lineWidth} onChange={(e) => { setLineWidth(parseInt(e.target.value)); setCurrentMode('draw'); }} style={{ cursor: 'pointer', width: '120px' }} />
-            <span style={{ fontSize: '12px', color: '#f5f5f5', fontFamily: 'var(--font-mono)', minWidth: '45px' }}>{lineWidth} mm</span>
+            <span style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-mono)', minWidth: '45px' }}>{lineWidth} mm</span>
           </div>
         </div>
       </div>
       
-      <canvas ref={canvasRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} onMouseLeave={handleMouseUp} style={{ display: 'block', backgroundColor: '#0e0e0e', cursor: getCanvasCursor() }} />
+      <canvas ref={canvasRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} onMouseLeave={handleMouseUp} style={{ display: 'block', backgroundColor: 'var(--canvas-bg)', cursor: getCanvasCursor() }} />
     </div>
   );
 };
