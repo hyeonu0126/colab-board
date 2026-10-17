@@ -113,7 +113,7 @@ export const MeetingRoomLanding: React.FC<MeetingRoomLandingProps> = ({ onJoinSu
   return (
     <div style={styles.container}>
       {/* 다크/라이트 모드 전환 버튼 */}
-      <button type="button" onClick={onToggleTheme} style={styles.themeBtn}>
+      <button type="button" className="px-btn" onClick={onToggleTheme} style={styles.themeBtn}>
         {theme === 'dark' ? '🌙 다크 모드' : '☀️ 라이트 모드'}
       </button>
 
@@ -162,7 +162,7 @@ export const MeetingRoomLanding: React.FC<MeetingRoomLandingProps> = ({ onJoinSu
             <label style={styles.label}>{isCreateMode ? '회의방 생성자 닉네임' : '참가자 닉네임'}</label>
             <input type="text" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="닉네임을 입력하세요" style={styles.input} />
           </div>
-          <button type="submit" style={styles.submitBtn}>{isCreateMode ? '방 생성 및 입장' : '방 검증 및 입장'}</button>
+          <button type="submit" className="px-btn" style={styles.submitBtn}>{isCreateMode ? '방 생성 및 입장' : '방 검증 및 입장'}</button>
         </form>
       </div>
 

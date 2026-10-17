@@ -797,6 +797,7 @@ useEffect(() => {
       {/* 채팅 사이드바 열기/닫기 토글 */}
       <button
         onClick={() => { setIsChatOpen((v) => !v); setHasUnread(false); }}
+        className="px-btn"
         style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 10, padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}
       >
         {isChatOpen ? '💬 채팅 닫기' : '💬 채팅 열기'}
@@ -850,7 +851,7 @@ useEffect(() => {
   </div>
 )}
       {/* 좌측 상단 드로잉 툴바 패널 */}
-      <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ position: 'absolute', top: '20px', left: '20px', right: '170px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px' }}>
         <div
   style={{
     display: 'flex',
@@ -858,20 +859,19 @@ useEffect(() => {
     flexWrap: 'wrap'
   }}
 >
-          <button onClick={() => setCurrentMode('draw')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'draw' ? 'var(--accent)' : 'var(--panel)', color: currentMode === 'draw' ? 'var(--accent-text)' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🎨 그리기 모드</button>
-          <button onClick={() => setCurrentMode('pointer')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'pointer' ? '#ff3b30' : 'var(--panel)', color: currentMode === 'pointer' ? '#ffffff' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>👆 포인터</button>
-          <button onClick={() => setCurrentMode('erase_partial')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_partial' ? '#ff9500' : 'var(--panel)', color: currentMode === 'erase_partial' ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🧹 부분 지우개</button>
-          <button onClick={() => setCurrentMode('erase_stroke')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_stroke' ? '#8b8aff' : 'var(--panel)', color: currentMode === 'erase_stroke' ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>✒️ 획 전체 지우개</button>
-          <button onClick={handleUndo} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px dashed var(--dashed)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>↩️ 되돌리기</button>
-          <button onClick={clearCanvas} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--danger)', border: '1px solid var(--danger-border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>  전체 지우기</button>
-          <label htmlFor="image-upload" style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
+          <button className="px-btn" onClick={() => setCurrentMode('draw')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'draw' ? 'var(--accent)' : 'var(--panel)', color: currentMode === 'draw' ? 'var(--accent-text)' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🎨 그리기 모드</button>
+          <button className="px-btn" onClick={() => setCurrentMode('pointer')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'pointer' ? '#ff3b30' : 'var(--panel)', color: currentMode === 'pointer' ? '#ffffff' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>👆 포인터</button>
+          <button className="px-btn" onClick={() => setCurrentMode('erase_partial')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_partial' ? '#ff9500' : 'var(--panel)', color: currentMode === 'erase_partial' ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🧹 부분 지우개</button>
+          <button className="px-btn" onClick={() => setCurrentMode('erase_stroke')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_stroke' ? '#8b8aff' : 'var(--panel)', color: currentMode === 'erase_stroke' ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>✒️ 획 전체 지우개</button>
+          <button className="px-btn" onClick={handleUndo} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px dashed var(--dashed)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>↩️ 되돌리기</button>
+          <button className="px-btn" onClick={clearCanvas} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--danger)', border: '1px solid var(--danger-border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>  전체 지우기</button>
+          <label className="px-btn" htmlFor="image-upload" style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
       🖼️ 이미지 업로드
     </label>
-          <button onClick={addPostit} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>📝 포스트잇</button>
+          <button className="px-btn" onClick={addPostit} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>📝 포스트잇</button>
   </div>
-        </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', backgroundColor: 'var(--panel-glass)', border: '1px solid var(--border)', padding: '10px 18px', borderRadius: '999px', boxShadow: 'var(--shadow-sm)', width: 'fit-content', zIndex: 9999, position:'relative',marginTop: '70px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', backgroundColor: 'var(--panel-glass)', border: '1px solid var(--border)', padding: '10px 18px', borderRadius: '999px', boxShadow: 'var(--shadow-sm)', width: 'fit-content', maxWidth: '100%', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>색상</span>
             {colors.map((color) => (
@@ -885,6 +885,7 @@ useEffect(() => {
             <span style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-mono)', minWidth: '45px' }}>{lineWidth} mm</span>
           </div>
         </div>
+      </div>
       </div>
       
       {Object.entries(postits).map(([id, data]) => (

@@ -1,71 +1,84 @@
-/* Aloud 스타일 다크 테마 공통 변수 */
+/* 레트로 픽셀 테마 공통 변수 (demo.html 디자인 확정안) */
 /* 다크 테마 (기본) */
 :root {
-  --bg: #0a0a0a;
-  --panel: #141414;
-  --panel-2: #1b1b1b;
-  --panel-glass: rgba(20, 20, 20, 0.92);
-  --input-bg: #0a0a0a;
-  --tab-active: #262626;
-  --border: rgba(255, 255, 255, 0.1);
-  --border-soft: rgba(255, 255, 255, 0.08);
-  --divider: rgba(255, 255, 255, 0.15);
-  --dashed: rgba(255, 255, 255, 0.35);
-  --text: #f5f5f5;
-  --text-btn: #e5e5e5;
-  --text-soft: #c4c4c4;
-  --text-dim: #9a9a9a;
-  --text-faint: #6b6b6b;
-  --accent: #f5f5f5;
-  --accent-text: #0a0a0a;
-  --accent-hover: #d4d4d4;
-  --canvas-bg: #0e0e0e;
-  --page-gradient: radial-gradient(ellipse at 50% 0%, #262626 0%, #0a0a0a 60%);
-  --title-gradient: linear-gradient(180deg, #ffffff 30%, #8a8a8a 100%);
-  --shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
-  --shadow-sm: 0 12px 32px rgba(0, 0, 0, 0.4);
-  --danger: #ff6b6b;
-  --danger-border: rgba(255, 107, 107, 0.5);
-  --danger-hover: rgba(255, 107, 107, 0.15);
-  --ok: #4cd964;
-  --swatch-ring: #ffffff;
-  --scroll: rgba(255, 255, 255, 0.18);
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --ink: #0b0b17;
+  --bg: #1a1c2c;
+  --panel: #29366f;
+  --panel-2: #1f2650;
+  --panel-glass: #29366f;
+  --input-bg: #0b0b17;
+  --tab-active: #3b5dc9;
+  --border: #0b0b17;
+  --border-soft: #0b0b17;
+  --divider: #0b0b17;
+  --dashed: #ffcd75;
+  --text: #f4f4f4;
+  --text-btn: #f4f4f4;
+  --text-soft: #d6dcf0;
+  --text-dim: #94b0c2;
+  --text-faint: #566090;
+  --accent: #ffcd75;
+  --accent-text: #0b0b17;
+  --accent-hover: #ffe0a3;
+  --canvas-bg: #1a1c2c;
+  --grid-line: rgba(255, 255, 255, 0.04);
+  --page-gradient:
+    linear-gradient(var(--grid-line) 2px, transparent 2px) 0 0 / 24px 24px,
+    linear-gradient(90deg, var(--grid-line) 2px, transparent 2px) 0 0 / 24px 24px,
+    #1a1c2c;
+  --title-gradient: linear-gradient(#ffcd75, #ffcd75);
+  --title-shadow: #b13e53;
+  --shadow: 8px 8px 0 #0b0b17;
+  --shadow-sm: 4px 4px 0 #0b0b17;
+  --danger: #ff8fa3;
+  --danger-border: #0b0b17;
+  --danger-hover: rgba(177, 62, 83, 0.4);
+  --ok: #a7f070;
+  --swatch-ring: #f4f4f4;
+  --scroll: #ffcd75;
+  --font-sans: 'DotGothic16', 'Press Start 2P', monospace;
+  --font-mono: 'DotGothic16', 'Press Start 2P', monospace;
+  --font-pixel: 'Press Start 2P', 'DotGothic16', monospace;
   color-scheme: dark;
 }
 
-/* 라이트 테마 */
+/* 라이트 테마 (크림 종이 톤의 레트로) */
 :root[data-theme='light'] {
-  --bg: #f4f4f2;
-  --panel: #ffffff;
-  --panel-2: #f3f3f1;
-  --panel-glass: rgba(255, 255, 255, 0.94);
-  --input-bg: #fafafa;
-  --tab-active: #ffffff;
-  --border: rgba(0, 0, 0, 0.12);
-  --border-soft: rgba(0, 0, 0, 0.08);
-  --divider: rgba(0, 0, 0, 0.15);
-  --dashed: rgba(0, 0, 0, 0.35);
-  --text: #0a0a0a;
-  --text-btn: #262626;
-  --text-soft: #404040;
-  --text-dim: #6b6b6b;
-  --text-faint: #9a9a9a;
-  --accent: #0a0a0a;
-  --accent-text: #f5f5f5;
-  --accent-hover: #2e2e2e;
-  --canvas-bg: #f0f0f0;
-  --page-gradient: radial-gradient(ellipse at 50% 0%, #ffffff 0%, #f4f4f2 60%);
-  --title-gradient: linear-gradient(180deg, #0a0a0a 30%, #6b6b6b 100%);
-  --shadow: 0 24px 60px rgba(0, 0, 0, 0.12);
-  --shadow-sm: 0 12px 32px rgba(0, 0, 0, 0.1);
-  --danger: #d92d20;
-  --danger-border: rgba(217, 45, 32, 0.5);
-  --danger-hover: rgba(217, 45, 32, 0.1);
+  --ink: #1a1c2c;
+  --bg: #f3e9d2;
+  --panel: #fff7e0;
+  --panel-2: #efe0b8;
+  --panel-glass: #fff7e0;
+  --input-bg: #ffffff;
+  --tab-active: #ffcd75;
+  --border: #1a1c2c;
+  --border-soft: #1a1c2c;
+  --divider: #1a1c2c;
+  --dashed: #b13e53;
+  --text: #1a1c2c;
+  --text-btn: #1a1c2c;
+  --text-soft: #333c57;
+  --text-dim: #566090;
+  --text-faint: #94a0c2;
+  --accent: #ef7d57;
+  --accent-text: #1a1c2c;
+  --accent-hover: #f39a7c;
+  --canvas-bg: #f3e9d2;
+  --grid-line: rgba(26, 28, 44, 0.07);
+  --page-gradient:
+    linear-gradient(var(--grid-line) 2px, transparent 2px) 0 0 / 24px 24px,
+    linear-gradient(90deg, var(--grid-line) 2px, transparent 2px) 0 0 / 24px 24px,
+    #f3e9d2;
+  --title-gradient: linear-gradient(#ef7d57, #ef7d57);
+  --title-shadow: #1a1c2c;
+  --shadow: 8px 8px 0 #1a1c2c;
+  --shadow-sm: 4px 4px 0 #1a1c2c;
+  --danger: #b13e53;
+  --danger-border: #1a1c2c;
+  --danger-hover: rgba(177, 62, 83, 0.15);
   --ok: #138a3d;
-  --swatch-ring: #0a0a0a;
-  --scroll: rgba(0, 0, 0, 0.2);
+  --swatch-ring: #1a1c2c;
+  --scroll: #ef7d57;
   color-scheme: light;
 }
 
@@ -105,10 +118,67 @@ label[for='image-upload']:hover {
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--scroll);
-  border-radius: 999px;
+  border: 2px solid var(--ink);
+}
+
+/* ---- 레트로 픽셀 공통 오버라이드 ----
+   컴포넌트가 인라인 스타일(둥근 모서리, 1px 테두리)을 쓰므로 여기서 한 번에 픽셀 느낌으로 덮어쓴다. */
+body {
+  font-size: 15px;
+  background-image: var(--page-gradient);
+  background-attachment: fixed;
+}
+
+/* 모서리 직각 (원형 요소는 50%로 지정돼 있어 제외) */
+button,
+input,
+textarea,
+[style*='border-radius']:not([style*='50%']) {
+  border-radius: 0 !important;
+}
+
+/* 굵은 픽셀 테두리 */
+[style*='1px solid var(--border'],
+[style*='1px dashed var(--dashed)'] {
+  border-width: 3px !important;
+}
+
+/* 하드 섀도 버튼 */
+.px-btn {
+  box-shadow: var(--shadow-sm) !important;
+}
+.px-btn:not(:disabled):active {
+  transform: translate(4px, 4px);
+  box-shadow: none !important;
+}
+
+/* 타이틀 */
+[style*='background-clip'] {
+  font-family: var(--font-pixel) !important;
+  font-size: 26px !important;
+  line-height: 1.4 !important;
+  filter: drop-shadow(3px 3px 0 var(--title-shadow));
+}
+
+/* 캔버스 픽셀 격자 */
+canvas {
+  background-image:
+    linear-gradient(var(--grid-line) 2px, transparent 2px),
+    linear-gradient(90deg, var(--grid-line) 2px, transparent 2px);
+  background-size: 24px 24px;
+}
+
+/* 약한 스캔라인 (마우스 입력은 통과) */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(transparent 0 2px, rgba(0, 0, 0, 0.1) 2px 3px);
+  z-index: 10000;
 }
