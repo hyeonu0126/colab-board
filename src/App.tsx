@@ -17,6 +17,45 @@ interface ImageData {
   height: number;
 }
 
+// 하이라이트 펜(획 주변 글로우) 번짐 반경
+const GLOW_BLUR = 18;
+
+type PenType = 'ball' | 'brush' | 'glow' | 'marker';
+
+const PEN_OPTIONS: { type: PenType; label: string }[] = [
+  { type: 'brush', label: '🖌️ 붓펜' },
+  { type: 'ball', label: '🖊️ 볼펜' },
+  { type: 'glow', label: '✨ 하이라이트 펜' },
+  { type: 'marker', label: '🖍️ 형광펜' },
+];
+
+// 과거 데이터(highlight 플래그)도 펜 종류로 해석한다
+const penOf = (line: { pen?: PenType; highlight?: boolean }): PenType =>
+  line.pen || (line.highlight ? 'glow' : 'ball');
+
+// 획 전체를 한 경로로 묶어 그리는 펜 (선분이 겹쳐도 진해지지 않게 한다)
+const GROUPED_PENS: PenType[] = ['glow', 'marker'];
+
+// 그리는 중인 선분 하나를 즉시 캔버스에 그린다
+const drawLiveSegment = (ctx: CanvasRenderingContext2D, pen: PenType, color: string, width: number, x1: number, y1: number, x2: number, y2: number) => {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  if (pen === 'glow') {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = GLOW_BLUR;
+  } else if (pen === 'marker') {
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = width * 3;
+  }
+  ctx.stroke();
+  ctx.restore();
+};
+
 type ToolMode = 'draw' | 'pointer' | 'erase_partial' | 'erase_stroke';
 
 interface PointerData {
@@ -99,7 +138,7 @@ function App() {
   };
 
   if (roomName && userName) {
-    return <WhiteboardCanvas theme={theme} roomName={roomName} userName={userName} onLeave={handleLeaveRoom} />;
+    return <WhiteboardCanvas theme={theme} onToggleTheme={handleToggleTheme} roomName={roomName} userName={userName} onLeave={handleLeaveRoom} />;
   }
 
   return <MeetingRoomLanding theme={theme} onToggleTheme={handleToggleTheme} onJoinSuccess={(room, user) => handleJoinAttempt(room, user)} />;
@@ -115,6 +154,7 @@ const THEME_STORAGE_KEY = 'colab-board-theme';
 
 interface CanvasProps {
   theme: Theme;
+  onToggleTheme: () => void;
   roomName: string;
   userName: string;
   onLeave: () => void;
@@ -127,12 +167,14 @@ interface RemoteUserAudio {
   audioElement: HTMLAudioElement;
 }
 
-const WhiteboardCanvas: React.FC<CanvasProps> = ({ theme, roomName, userName, onLeave }) => {
+const WhiteboardCanvas: React.FC<CanvasProps> = ({ theme, onToggleTheme, roomName, userName, onLeave }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // 💬 채팅 사이드바 상태
   const [isChatOpen, setIsChatOpen] = useState(true);
+  const [isEraserMenuOpen, setIsEraserMenuOpen] = useState(false);
+  const isSelfLeavingRef = useRef(false); // 내가 직접 방을 삭제하는 중이면 강퇴 감지를 건너뛴다
   const [hasUnread, setHasUnread] = useState(false);
   const isChatOpenRef = useRef(true);
   useEffect(() => {
@@ -148,6 +190,9 @@ const WhiteboardCanvas: React.FC<CanvasProps> = ({ theme, roomName, userName, on
 
   const [selectedColor, setSelectedColor] = useState<string>('#f5f5f5');
   const [lineWidth, setLineWidth] = useState<number>(5);
+  const [penType, setPenType] = useState<PenType>('ball');
+  const [isPenMenuOpen, setIsPenMenuOpen] = useState(false);
+  const brushWidthRef = useRef(5); // 붓펜: 직전 선분의 굵기 (속도에 따라 부드럽게 변한다)
 
   const [firebaseData, setFirebaseData] = useState<any>(null);
   const linesRef = ref(db, `rooms/${roomName}/lines`); 
@@ -183,6 +228,22 @@ const WhiteboardCanvas: React.FC<CanvasProps> = ({ theme, roomName, userName, on
   // 🎛️ 참가자별 볼륨 관리 상태
   const [volumes, setVolumes] = useState<{ [key: string]: number }>({});
   const [remoteAudios, setRemoteAudios] = useState<RemoteUserAudio[]>([]);
+
+  // 강퇴 감지: 입장 후 내 users 노드가 삭제되면(관리자 추방/방 삭제) 스스로 퇴장한다
+  useEffect(() => {
+    let hasJoined = false;
+    const unsubscribe = onValue(ref(db, `rooms/${roomName}/users/${userName}`), (snapshot) => {
+      if (snapshot.exists()) {
+        hasJoined = true;
+      } else if (hasJoined && !isSelfLeavingRef.current) {
+        hasJoined = false;
+        alert('방에서 추방되었거나 방이 삭제되어 퇴장합니다.');
+        onLeave();
+      }
+    });
+    return () => unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomName, userName]);
 
   // 🎙️ 보이스톡 핵심 라이프사이클
   useEffect(() => {
@@ -398,6 +459,7 @@ const kickUser = async (targetUserName: string) => {
         
         if (roomData.adminPass === inputPassword.trim()) {
           if (confirm('정말로 이 회의방의 모든 데이터와 세션을 영구 삭제하시겠습니까?')) {
+            isSelfLeavingRef.current = true;
             await remove(roomRootRef); 
             alert('회의방이 완전히 삭제되었습니다.');
             onLeave(); 
@@ -435,8 +497,49 @@ const renderCanvas = (canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, 
 
   // 2. 선 그리기
   if (!data) return;
-  Object.values(data).forEach((line: any) => {
+  const lines = Object.values(data) as any[];
+
+  // 글로우/형광펜은 획 단위로 한 경로로 묶어 그린다 (일반 선 아래에 깔린다)
+  const groupedStrokes = new Map<string, any[]>();
+  lines.filter((line) => GROUPED_PENS.includes(penOf(line))).forEach((line) => {
+    const key = line.strokeId || `${line.startX}-${line.startY}`;
+    groupedStrokes.set(key, [...(groupedStrokes.get(key) || []), line]);
+  });
+  groupedStrokes.forEach((strokeLines) => {
+    const pen = penOf(strokeLines[0]);
+    const color = inkColor(strokeLines[0].color, theme);
+    const width = strokeLines[0].lineWidth || 1;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.beginPath();
+    strokeLines.forEach((line) => {
+      ctx.moveTo(line.startX, line.startY);
+      ctx.lineTo(line.endX, line.endY);
+    });
+    ctx.strokeStyle = color;
+    if (pen === 'glow') {
+      // 번지는 빛 (두 번 겹쳐 더 밝게) + 밝은 중심선
+      ctx.shadowColor = color;
+      ctx.shadowBlur = GLOW_BLUR;
+      ctx.lineWidth = width;
+      ctx.stroke();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      ctx.lineWidth = Math.max(1, width * 0.4);
+      ctx.stroke();
+    } else if (pen === 'marker') {
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = width * 3;
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+
+  lines.filter((line) => !GROUPED_PENS.includes(penOf(line))).forEach((line) => {
+    ctx.beginPath();
+    ctx.lineCap = 'round';
     ctx.moveTo(line.startX, line.startY);
     ctx.lineTo(line.endX, line.endY);
     ctx.strokeStyle = inkColor(line.color, theme);
@@ -606,11 +709,11 @@ useEffect(() => {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (currentMode === 'pointer') return; // 포인터 모드에서는 그리기/지우기/이미지 선택 없음
     const clickPos = getMousePos(e);
 
-  // [추가] 이미지 클릭 여부 확인 (클릭한 좌표가 이미지 영역 안에 있는지)
-  const clickedImage = Object.entries(images).reverse().find(([, img]) => {
+  // 이미지 선택/이동은 포인터 모드, 이미지 삭제는 부분 지우개 모드에서만 한다 (그리기 모드에서는 이미지 위에도 그려진다)
+  const canInteractImage = currentMode === 'pointer' || currentMode === 'erase_partial';
+  const clickedImage = !canInteractImage ? undefined : Object.entries(images).reverse().find(([, img]) => {
     return clickPos.x >= img.x && clickPos.x <= img.x + img.width &&
            clickPos.y >= img.y && clickPos.y <= img.y + img.height;
   });
@@ -636,6 +739,7 @@ useEffect(() => {
     };
     return; // 이미지를 클릭했으면 드로잉 로직은 건너뜀
   }
+    if (currentMode === 'pointer') return; // 포인터 모드에서는 그리기/지우기 없음
     if (currentMode === 'erase_partial' || currentMode === 'erase_stroke') {
       setIsErasing(true);
       setTempErasedLines([]); 
@@ -651,12 +755,8 @@ useEffect(() => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      ctx.beginPath();
-      ctx.moveTo(clickPos.x, clickPos.y);
-      ctx.lineTo(clickPos.x + 0.1, clickPos.y + 0.1); 
-      ctx.strokeStyle = inkColor(selectedColor, theme);
-      ctx.lineWidth = lineWidth; 
-      ctx.stroke();
+      brushWidthRef.current = lineWidth;
+      drawLiveSegment(ctx, penType, inkColor(selectedColor, theme), lineWidth, clickPos.x, clickPos.y, clickPos.x + 0.1, clickPos.y + 0.1);
 
       const newLineRef = push(linesRef);
       set(newLineRef, {
@@ -667,6 +767,7 @@ useEffect(() => {
         strokeId: newId,
         color: selectedColor,
         lineWidth: lineWidth,
+        ...(penType !== 'ball' && { pen: penType }),
         userId: userName 
       });
 
@@ -695,12 +796,15 @@ useEffect(() => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      ctx.beginPath();
-      ctx.moveTo(lastPos.x, lastPos.y);
-      ctx.lineTo(currentPos.x, currentPos.y);
-      ctx.strokeStyle = inkColor(selectedColor, theme);
-      ctx.lineWidth = lineWidth; 
-      ctx.stroke();
+      // 붓펜은 빠르게 그을수록 가늘어지고 천천히 그을수록 굵어진다
+      let segmentWidth = lineWidth;
+      if (penType === 'brush') {
+        const speed = Math.hypot(currentPos.x - lastPos.x, currentPos.y - lastPos.y);
+        const target = lineWidth * Math.min(1.8, Math.max(0.4, 1.8 - speed / 20));
+        segmentWidth = brushWidthRef.current * 0.6 + target * 0.4;
+        brushWidthRef.current = segmentWidth;
+      }
+      drawLiveSegment(ctx, penType, inkColor(selectedColor, theme), segmentWidth, lastPos.x, lastPos.y, currentPos.x, currentPos.y);
 
       const newLineRef = push(linesRef);
       set(newLineRef, {
@@ -710,7 +814,8 @@ useEffect(() => {
         endY: currentPos.y,
         strokeId: currentStrokeId,
         color: selectedColor,
-        lineWidth: lineWidth,
+        lineWidth: segmentWidth,
+        ...(penType !== 'ball' && { pen: penType }),
         userId: userName 
       });
 
@@ -760,6 +865,8 @@ useEffect(() => {
           strokeId: lineData.strokeId,
           color: lineData.color || 'black',
           lineWidth: lineData.lineWidth || 1,
+          ...(lineData.pen && { pen: lineData.pen }),
+          ...(lineData.highlight && { highlight: true }),
           userId: lineData.userId || userName
         });
       });
@@ -776,35 +883,22 @@ useEffect(() => {
   };
 
   const getCanvasCursor = () => {
-    if (currentMode === 'pointer') return 'crosshair';
+    if (currentMode === 'pointer') return `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 36 36'><defs><filter id='g' x='-100%' y='-100%' width='300%' height='300%'><feGaussianBlur stdDeviation='4'/></filter></defs><circle cx='18' cy='18' r='6' fill='%23ff2a6d' filter='url(%23g)'/><circle cx='18' cy='18' r='9' fill='%23ff2a6d' opacity='0.6' filter='url(%23g)'/><circle cx='18' cy='18' r='2.5' fill='white'/></svg>") 14 14, crosshair`;
     if (currentMode === 'erase_partial') return 'not-allowed';
     if (currentMode === 'erase_stroke') return 'cell';
     return 'default';
   };
 
-  const colors = ['#f5f5f5', '#ff3b30', '#007aff', '#4cd964', '#ffcc00', '#5856d6'];
+  const isEraserMode = currentMode === 'erase_partial' || currentMode === 'erase_stroke';
+
+  const colors = ['#f5f5f5', '#ff3b30', '#007aff'];
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', fontFamily: 'var(--font-sans)', backgroundColor: 'var(--canvas-bg)' }}>
-      {/* 좌측: 캔버스 영역 (툴바/이미지 슬라이더는 이 영역 기준으로 배치) */}
-      <div
-        ref={containerRef}
-        onMouseMove={sendPointer}
-        onMouseLeave={hidePointer}
-        style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden' }}
-      >
-
-      {/* 채팅 사이드바 열기/닫기 토글 */}
-      <button
-        onClick={() => { setIsChatOpen((v) => !v); setHasUnread(false); }}
-        className="px-btn"
-        style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 10, padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}
-      >
-        {isChatOpen ? '💬 채팅 닫기' : '💬 채팅 열기'}
-        {!isChatOpen && hasUnread && <span style={{ display: 'inline-block', width: '8px', height: '8px', marginLeft: '6px', borderRadius: '50%', backgroundColor: '#ef4444' }} />}
-      </button>
-{/* 툴바 패널 안쪽(색상 선택기나 굵기 조절기 주변)에 추가 */}
-<div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+      {/* 좌측: 상단바 + 캔버스 영역 (상단바는 캔버스 위에 겹치지 않고 별도 행을 차지한다) */}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+      {/* 상단바 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '10px 16px', backgroundColor: 'var(--panel)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
   <input 
     type="file" 
     accept="image/*" 
@@ -823,10 +917,97 @@ useEffect(() => {
     style={{ display: 'none' }} 
     id="image-upload" 
   />
+          <button className="px-btn" onClick={() => setCurrentMode('draw')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'draw' ? 'var(--accent)' : 'var(--panel)', color: currentMode === 'draw' ? 'var(--accent-text)' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🎨 그리기</button>
+          <button className="px-btn" onClick={() => setCurrentMode('pointer')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'pointer' ? '#ff3b30' : 'var(--panel)', color: currentMode === 'pointer' ? '#ffffff' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>👆 포인터</button>
+          {/* 지우개 드롭다운: 부분 / 획 전체 / 전체 지우기 */}
+          <div style={{ position: 'relative' }}>
+            <button className="px-btn" onClick={() => setIsEraserMenuOpen((v) => !v)} style={{ padding: '9px 14px', backgroundColor: isEraserMode ? (currentMode === 'erase_partial' ? '#ff9500' : '#8b8aff') : 'var(--panel)', color: isEraserMode ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
+              {currentMode === 'erase_stroke' ? '✒️ 획 지우개' : '🧹 지우개'} ▾
+            </button>
+            {isEraserMenuOpen && (
+              <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 30, display: 'flex', flexDirection: 'column', minWidth: '150px', backgroundColor: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '14px', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
+                <button className="px-btn" onClick={() => { setCurrentMode('erase_partial'); setIsEraserMenuOpen(false); }} style={{ padding: '9px 14px', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap', color: 'var(--text-btn)' }}>🧹 부분 지우개</button>
+                <button className="px-btn" onClick={() => { setCurrentMode('erase_stroke'); setIsEraserMenuOpen(false); }} style={{ padding: '9px 14px', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap', color: 'var(--text-btn)' }}>✒️ 획 전체 지우개</button>
+                <button className="px-btn" onClick={() => { clearCanvas(); setIsEraserMenuOpen(false); }} style={{ padding: '9px 14px', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap', color: 'var(--danger)' }}>🗑️ 전체 지우기</button>
+              </div>
+            )}
+          </div>
+          <button className="px-btn" onClick={handleUndo} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>↩️ 되돌리기</button>
+          <label className="px-btn" htmlFor="image-upload" style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
+      🖼️ 이미지
+    </label>
+          <button className="px-btn" onClick={addPostit} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>📝 메모</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', border: '1px solid var(--border)', padding: '4px 14px', borderRadius: '999px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* 펜 종류 드롭다운 */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setIsPenMenuOpen((v) => !v)}
+                className="px-btn px-flat"
+                style={{ padding: '3px 10px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '12px', whiteSpace: 'nowrap' }}
+              >{PEN_OPTIONS.find((o) => o.type === penType)?.label} ▾</button>
+              {isPenMenuOpen && (
+                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 30, display: 'flex', flexDirection: 'column', minWidth: '150px', backgroundColor: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
+                  {PEN_OPTIONS.map((o) => (
+                    <button
+                      key={o.type}
+                      className="px-btn px-flat"
+                      onClick={() => { setPenType(o.type); setCurrentMode('draw'); setIsPenMenuOpen(false); }}
+                      style={{ padding: '9px 14px', width: '100%', textAlign: 'left', background: penType === o.type ? 'var(--accent)' : 'transparent', color: penType === o.type ? 'var(--accent-text)' : 'var(--text-btn)', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap' }}
+                    >{o.label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* 직접 색 고르기 */}
+            <input
+              type="color"
+              title="색상 직접 선택"
+              value={/^#[0-9a-fA-F]{6}$/.test(selectedColor) ? selectedColor : '#111111'}
+              onChange={(e) => { setSelectedColor(e.target.value); setCurrentMode('draw'); }}
+              style={{ width: '28px', height: '28px', padding: 0, border: '1px solid var(--border)', borderRadius: '50%', background: 'none', cursor: 'pointer' }}
+            />
+            {colors.map((color) => (
+              <button key={color} onClick={() => { setSelectedColor(color); setCurrentMode('draw'); }} style={{ width: '24px', height: '24px', backgroundColor: inkColor(color, theme), border: selectedColor === color ? '2px solid var(--swatch-ring)' : '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', cursor: 'pointer', transform: selectedColor === color ? 'scale(1.1)' : 'scale(1)', transition: 'transform 0.1s ease' }} />
+            ))}
+          </div>
+          <div style={{ width: '1px', height: '20px', backgroundColor: 'var(--divider)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>굵기</span>
+            <input type="range" min="1" max="20" step="1" value={lineWidth} onChange={(e) => { setLineWidth(parseInt(e.target.value)); setCurrentMode('draw'); }} style={{ cursor: 'pointer', width: '60px' }} />
+            <span style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-mono)', minWidth: '45px' }}>{lineWidth} mm</span>
+          </div>
+          </div>
+        <div style={{ flex: 1 }} />
+      {!isChatOpen && (
+      <button
+        onClick={onToggleTheme}
+        className="px-btn"
+        title="다크/라이트 모드 전환"
+        style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}
+      >{theme === 'dark' ? '🌙 다크' : '☀️ 라이트'}</button>
+      )}
+      {!isChatOpen && (
+      <button
+        onClick={() => { setIsChatOpen(true); setHasUnread(false); }}
+        className="px-btn"
+        style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}
+      >
+        💬 채팅
+        {hasUnread && <span style={{ display: 'inline-block', width: '8px', height: '8px', marginLeft: '6px', borderRadius: '50%', backgroundColor: '#ef4444' }} />}
+      </button>
+      )}
+      </div>
 
-
+      {/* 캔버스 영역 (슬라이더/색상 패널은 이 영역 기준으로 배치) */}
+      <div
+        ref={containerRef}
+        onMouseMove={sendPointer}
+        onMouseLeave={hidePointer}
+        style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden' }}
+      >
 {/* 선택된 이미지 크기 조절 슬라이더 (좌측 하단 혹은 툴바 아래) */}
-{selectedImageId && (
+{selectedImageId && currentMode === 'pointer' && (
   <div style={{ 
     position: 'absolute', bottom: '20px', left: '20px', padding: '15px', 
     background: 'var(--panel-glass)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '14px', boxShadow: 'var(--shadow)',
@@ -850,44 +1031,7 @@ useEffect(() => {
     >닫기</button>
   </div>
 )}
-      {/* 좌측 상단 드로잉 툴바 패널 */}
-      <div style={{ position: 'absolute', top: '20px', left: '20px', right: '170px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px' }}>
-        <div
-  style={{
-    display: 'flex',
-    gap: '10px',
-    flexWrap: 'wrap'
-  }}
->
-          <button className="px-btn" onClick={() => setCurrentMode('draw')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'draw' ? 'var(--accent)' : 'var(--panel)', color: currentMode === 'draw' ? 'var(--accent-text)' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🎨 그리기 모드</button>
-          <button className="px-btn" onClick={() => setCurrentMode('pointer')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'pointer' ? '#ff3b30' : 'var(--panel)', color: currentMode === 'pointer' ? '#ffffff' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>👆 포인터</button>
-          <button className="px-btn" onClick={() => setCurrentMode('erase_partial')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_partial' ? '#ff9500' : 'var(--panel)', color: currentMode === 'erase_partial' ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>🧹 부분 지우개</button>
-          <button className="px-btn" onClick={() => setCurrentMode('erase_stroke')} style={{ padding: '9px 14px', backgroundColor: currentMode === 'erase_stroke' ? '#8b8aff' : 'var(--panel)', color: currentMode === 'erase_stroke' ? '#0a0a0a' : 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>✒️ 획 전체 지우개</button>
-          <button className="px-btn" onClick={handleUndo} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px dashed var(--dashed)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>↩️ 되돌리기</button>
-          <button className="px-btn" onClick={clearCanvas} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--danger)', border: '1px solid var(--danger-border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>  전체 지우기</button>
-          <label className="px-btn" htmlFor="image-upload" style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
-      🖼️ 이미지 업로드
-    </label>
-          <button className="px-btn" onClick={addPostit} style={{ padding: '9px 14px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>📝 포스트잇</button>
-  </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', backgroundColor: 'var(--panel-glass)', border: '1px solid var(--border)', padding: '10px 18px', borderRadius: '999px', boxShadow: 'var(--shadow-sm)', width: 'fit-content', maxWidth: '100%', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>색상</span>
-            {colors.map((color) => (
-              <button key={color} onClick={() => { setSelectedColor(color); setCurrentMode('draw'); }} style={{ width: '24px', height: '24px', backgroundColor: inkColor(color, theme), border: selectedColor === color ? '2px solid var(--swatch-ring)' : '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', cursor: 'pointer', transform: selectedColor === color ? 'scale(1.1)' : 'scale(1)', transition: 'transform 0.1s ease' }} />
-            ))}
-          </div>
-          <div style={{ width: '1px', height: '20px', backgroundColor: 'var(--divider)' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>굵기</span>
-            <input type="range" min="1" max="20" step="1" value={lineWidth} onChange={(e) => { setLineWidth(parseInt(e.target.value)); setCurrentMode('draw'); }} style={{ cursor: 'pointer', width: '120px' }} />
-            <span style={{ fontSize: '12px', color: 'var(--text)', fontFamily: 'var(--font-mono)', minWidth: '45px' }}>{lineWidth} mm</span>
-          </div>
-        </div>
-      </div>
-      </div>
-      
       {Object.entries(postits).map(([id, data]) => (
         <PostIt key={id} roomName={roomName} id={id} data={data} />
       ))}
@@ -898,23 +1042,37 @@ useEffect(() => {
         .map(([name, p]) => (
           <div key={name} style={{ position: 'absolute', left: p.x, top: p.y, zIndex: 9, pointerEvents: 'none', transition: 'left 60ms linear, top 60ms linear' }}>
             {p.laser ? (
-              <div style={{ width: '14px', height: '14px', marginLeft: '-7px', marginTop: '-7px', borderRadius: '50%', backgroundColor: pointerColor(name), boxShadow: `0 0 0 3px ${pointerColor(name)}55, 0 0 12px ${pointerColor(name)}` }} />
+              <div style={{ width: '6px', height: '6px', marginLeft: '-3px', marginTop: '-3px', borderRadius: '50%', backgroundColor: '#ffffff', boxShadow: `0 0 3px 1px ${pointerColor(name)}, 0 0 7px 3px ${pointerColor(name)}, 0 0 14px 6px ${pointerColor(name)}99`, animation: 'laser-glow 1.4s ease-in-out infinite' }} />
             ) : (
               <svg width="16" height="16" viewBox="0 0 16 16" style={{ display: 'block', overflow: 'visible', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}>
                 <path d="M0 0 L0 12 L3.5 9 L6 14 L8 13 L5.5 8 L10 8 Z" fill={pointerColor(name)} stroke="#ffffff" strokeWidth="1" />
               </svg>
             )}
-            <span style={{ position: 'absolute', left: p.laser ? '10px' : '14px', top: p.laser ? '8px' : '14px', padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap', backgroundColor: pointerColor(name), color: '#ffffff' }}>{name}</span>
+            <span style={{ position: 'absolute', left: p.laser ? '12px' : '14px', top: p.laser ? '10px' : '14px', padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap', backgroundColor: pointerColor(name), color: '#ffffff' }}>{name}</span>
           </div>
         ))}
 
       <canvas ref={canvasRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} onMouseLeave={handleMouseUp} style={{ display: 'block', backgroundColor: 'var(--canvas-bg)', cursor: getCanvasCursor() }} />
       </div>
+      </div>
 
       {/* 우측: 채팅 사이드바 (닫아도 마운트 유지해서 새 메시지 알림을 받는다) */}
       <aside style={{ display: isChatOpen ? 'flex' : 'none', flexDirection: 'column', width: '320px', flexShrink: 0, backgroundColor: 'var(--panel)', color: 'var(--text)', borderLeft: '1px solid var(--border)' }}>
-        <div style={{ padding: '14px 16px', fontSize: '14px', fontWeight: 600, borderBottom: '1px solid var(--border)', paddingRight: '16px' }}>
-          🏠 방: {roomName}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '14px 16px', fontSize: '14px', fontWeight: 600, borderBottom: '1px solid var(--border)' }}>
+          <span>🏠 방: {roomName}</span>
+          <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          <button
+            onClick={onToggleTheme}
+            className="px-btn"
+            title="다크/라이트 모드 전환"
+            style={{ padding: '6px 12px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}
+          >{theme === 'dark' ? '🌙 다크' : '☀️ 라이트'}</button>
+          <button
+            onClick={() => setIsChatOpen(false)}
+            className="px-btn"
+            style={{ padding: '6px 12px', backgroundColor: 'var(--panel)', color: 'var(--text-btn)', border: '1px solid var(--border)', borderRadius: '999px', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}
+          >💬 채팅 닫기</button>
+          </div>
         </div>
 
         <ChatPanel roomName={roomName} userName={userName} onNewMessage={() => { if (!isChatOpenRef.current) setHasUnread(true); }} />

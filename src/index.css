@@ -152,6 +152,11 @@ textarea,
 .px-btn {
   box-shadow: var(--shadow-sm) !important;
 }
+.px-btn.px-flat,
+.px-btn.px-flat:not(:disabled):active {
+  box-shadow: none !important;
+  transform: none;
+}
 .px-btn:not(:disabled):active {
   transform: translate(4px, 4px);
   box-shadow: none !important;
@@ -181,4 +186,10 @@ body::after {
   pointer-events: none;
   background: repeating-linear-gradient(transparent 0 2px, rgba(0, 0, 0, 0.1) 2px 3px);
   z-index: 10000;
+}
+
+/* 포인터(레이저) 모드: 형광 빛이 은은하게 깜빡인다 */
+@keyframes laser-glow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.5); }
 }
